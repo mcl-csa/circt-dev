@@ -62,7 +62,7 @@ static cl::opt<bool>
 
 static cl::opt<bool> allowUnregisteredDialects(
     "allow-unregistered-dialect",
-    cl::desc("Allow operation with no registered dialects"), cl::init(false));
+    cl::desc("Allow operation with no registered dialects"), cl::init(true));
 
 int main(int argc, char **argv) {
   InitLLVM y(argc, argv);
