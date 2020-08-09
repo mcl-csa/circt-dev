@@ -9,6 +9,7 @@
 #include "circt/Conversion/LLHDToLLVM/LLHDToLLVM.h"
 #include "circt/Conversion/StandardToHandshake/StandardToHandshake.h"
 #include "circt/Dialect/FIRRTL/Dialect.h"
+#include "circt/Dialect/HIR/HIRDialect.h"
 #include "circt/Dialect/Handshake/HandshakeOps.h"
 #include "circt/Dialect/LLHD/IR/LLHDDialect.h"
 #include "circt/Dialect/LLHD/Transforms/Passes.h"
@@ -91,6 +92,7 @@ int main(int argc, char **argv) {
   handshake::registerStandardToHandshakePasses();
   handshake::registerHandshakeToFIRRTLPasses();
 
+  registerDialect<hir::HIRDialect>();
   registerDialect<rtl::RTLDialect>();
 
   registerDialect<llhd::LLHDDialect>();
