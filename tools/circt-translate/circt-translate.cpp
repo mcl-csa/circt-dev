@@ -8,10 +8,12 @@
 
 #include "circt/Dialect/FIRRTL/Dialect.h"
 #include "circt/Dialect/LLHD/IR/LLHDDialect.h"
+#include "circt/Dialect/HIR/HIRDialect.h"
 #include "circt/Dialect/RTL/Dialect.h"
 #include "circt/EmitVerilog.h"
 #include "circt/FIRParser.h"
 #include "circt/Target/Verilog/TranslateToVerilog.h"
+#include "circt/Target/HIRToVerilog/HIRToVerilog.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/Diagnostics.h"
@@ -63,6 +65,8 @@ int main(int argc, char **argv) {
   // LLHD
   registerDialect<llhd::LLHDDialect>();
   llhd::registerToVerilogTranslation();
+  registerDialect<hir::HIRDialect>();
+  hir::registerHIRToVerilogTranslation();
 
   llvm::InitLLVM y(argc, argv);
 
