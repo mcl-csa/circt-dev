@@ -1,12 +1,12 @@
 //RUN: circt-opt %s | circt-opt | FileCheck %s
 
-// CHECK: func @check_arithmetic(%[[A:.*]]: i64, %[[B:.*]]: i64) {
-func @check_arithmetic(%a : i64, %b : i64) -> () {
-    // CHECK-NEXT: %{{.*}} = llhd.neg %[[A]] : i64
-    %0 = "llhd.neg"(%a) : (i64) -> i64
+// CHECK: func @check_arithmetic(%[[A:.*]]: i2449, %[[B:.*]]: i2449) {
+func @check_arithmetic(%a : i2449, %b : i2449) -> () {
+    // CHECK-NEXT: %{{.*}} = llhd.neg %[[A]] : i2449
+    %0 = "llhd.neg"(%a) : (i2449) -> i2449
 
-    // CHECK-NEXT: %{{.*}} = llhd.smod %[[A]], %[[B]] : i64
-    %2 = "llhd.smod"(%a, %b) : (i64, i64) -> i64
+    // CHECK-NEXT: %{{.*}} = llhd.smod %[[A]], %[[B]] : i2449
+    %2 = "llhd.smod"(%a, %b) : (i2449, i2449) -> i2449
 
     return
 }
