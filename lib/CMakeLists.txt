@@ -3,3 +3,5 @@ add_subdirectory(Dialect)
 add_subdirectory(FIRParser)
 add_subdirectory(EmitVerilog)
 add_subdirectory(Target)
+add_subdirectory(Transforms)
+

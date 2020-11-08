@@ -15,6 +15,8 @@
 #include "circt/Dialect/LLHD/IR/LLHDDialect.h"
 #include "circt/Dialect/LLHD/Transforms/Passes.h"
 #include "circt/Dialect/RTL/Dialect.h"
+#include "circt/Transforms/HIR/BitwidthReductionPass.h"
+
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/AsmState.h"
@@ -93,8 +95,10 @@ int main(int argc, char **argv) {
   handshake::registerStandardToHandshakePasses();
   handshake::registerHandshakeToFIRRTLPasses();
 
+  // Register HIR Dialect and passes.
   registerDialect<hir::HIRDialect>();
   hir::registerScheduleVerifier();
+  hir::registerBitwidthReductionPass();
   registerDialect<rtl::RTLDialect>();
 
   registerDialect<llhd::LLHDDialect>();

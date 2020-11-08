@@ -10,6 +10,7 @@ target_link_libraries(circt-opt
   PRIVATE
   MLIRHIR
   MLIRHIRScheduleVerifier
+  MLIRHIRBitwidthReductionPass
   MLIRFIRRTL
   MLIRHandshakeOps
   MLIRRTL
