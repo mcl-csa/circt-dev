@@ -16,6 +16,24 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
+// AffineToHIR
+//===----------------------------------------------------------------------===//
+
+def AffineToHIR : Pass<"affine-to-hir","mlir::ModuleOp"> {
+  let summary = "Convert Affine dialect to HIR dialect.";
+  let description = [{
+    This pass analyzes Affine loops and control flow, creates a Scheduling
+    problem and solves it using ILP solver and lowers it to HIR.
+  }];
+  let constructor = "circt::createAffineToHIR()";
+  let dependentDialects = [
+    "circt::hir::HIRDialect",
+    "circt::hw::HWDialect",
+    "circt::comb::CombDialect"
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // AffineToStaticLogic
 //===----------------------------------------------------------------------===//
 
@@ -296,6 +314,21 @@ def HandshakeToFIRRTL : Pass<"lower-handshake-to-firrtl", "mlir::ModuleOp"> {
     "Flattens the generated FIRRTL component by inlining all dataflow component"
     " instantiations into the top module.">,
   ];
+}
+
+//===----------------------------------------------------------------------===//
+// HIRToHW
+//===----------------------------------------------------------------------===//
+
+def HIRToHW : Pass<"hir-to-hw", "mlir::ModuleOp"> {
+  let summary = "Convert HIR to HW + Comb + SV dialect";
+  let description = [{
+    Convert an HIR module to HW, Comb and SV dialect.
+  }];
+
+  let constructor = "circt::createHIRToHWPass()";
+  let dependentDialects = ["comb::CombDialect", "hw::HWDialect",
+                           "sv::SVDialect"];
 }
 
 //===----------------------------------------------------------------------===//

@@ -15,6 +15,11 @@
 #include "mlir/Pass/Pass.h"
 
 namespace mlir {
+
+namespace memref {
+class MemRefDialect;
+} // namespace memref
+
 namespace arith {
 class ArithmeticDialect;
 } // namespace arith
@@ -65,6 +70,10 @@ class FuncOp;
 namespace esi {
 class ESIDialect;
 } // namespace esi
+
+namespace hir {
+class HIRDialect;
+} // namespace hir
 
 namespace moore {
 class MooreDialect;
