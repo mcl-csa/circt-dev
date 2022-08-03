@@ -5,62 +5,11 @@
 //---------------------------- Helper functions --------------------------------
 //------------------------------------------------------------------------------
 
-static bool hasAttribute(StringRef name, ArrayRef<NamedAttribute> attrs) {
-  for (const auto &argAttr : attrs)
-    if (argAttr.getName() == name)
-      return true;
-  return false;
-}
-
-static StringAttr getNameAttr(MLIRContext *context, StringRef name) {
-  if (!name.empty()) {
-    // Ignore numeric names like %42
-    assert(name.size() > 1 && name[0] == '%' && "Unknown MLIR name");
-    if (isdigit(name[1]))
-      name = StringRef();
-    else
-      name = name.drop_front();
-  }
-  return StringAttr::get(context, name);
-}
-
-static LogicalResult
-addNamesAttribute(MLIRContext *context, StringRef attrName,
-                  ArrayRef<OpAsmParser::UnresolvedOperand> args,
-                  OperationState &result) {
-
-  if (args.empty())
-    return success();
-
-  // Use SSA names only if names are not previously defined.
-  if (!hasAttribute(attrName, result.attributes)) {
-    SmallVector<Attribute> argNames;
-    for (const auto &arg : args)
-      if (arg.name.empty())
-        argNames.push_back(StringAttr::get(context));
-      else
-        argNames.push_back(getNameAttr(context, arg.name));
-
-    result.addAttribute(attrName, ArrayAttr::get(context, argNames));
-  }
-  return success();
-}
-
-static ParseResult parseNamedOperandColonType(
-    OpAsmParser &parser,
-    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &entryArgs,
-    SmallVectorImpl<Type> &argTypes) {
-
-  OpAsmParser::UnresolvedOperand operand;
-  Type operandTy;
-  auto operandLoc = parser.getCurrentLocation();
-  if (parser.parseOperand(operand) || parser.parseColonType(operandTy))
-    return failure();
-  if (operand.name.empty())
-    return parser.emitError(operandLoc) << "SSA value must have a valid name.";
-  entryArgs.push_back(operand);
-  argTypes.push_back(operandTy);
-  return success();
+SmallVector<Type> getTypes(ArrayRef<OpAsmParser::Argument> args) {
+  SmallVector<Type> types;
+  for (auto arg : args)
+    types.push_back(arg.type);
+  return types;
 }
 
 static ParseResult parseDelayAttr(OpAsmParser &parser,
@@ -74,9 +23,8 @@ static ParseResult parseDelayAttr(OpAsmParser &parser,
       return failure();
     attrsList.push_back(DictionaryAttr::get(context, argAttrs));
   } else {
-    attrsList.push_back(
-        helper::getDictionaryAttr(parser.getBuilder(), "hir.delay",
-                                  helper::getI64IntegerAttr(context, 0)));
+    attrsList.push_back(helper::getDictionaryAttr(
+        "hir.delay", helper::getI64IntegerAttr(context, 0)));
   }
   return success();
 }
@@ -89,8 +37,8 @@ parseMemrefPortsAttr(OpAsmParser &parser,
   if (parser.parseKeyword("ports") || parser.parseAttribute(memrefPortsAttr))
     return failure();
 
-  attrsList.push_back(helper::getDictionaryAttr(
-      parser.getBuilder(), "hir.memref.ports", memrefPortsAttr));
+  attrsList.push_back(
+      helper::getDictionaryAttr("hir.memref.ports", memrefPortsAttr));
 
   return success();
 }
@@ -116,18 +64,18 @@ parseBusPortsAttr(OpAsmParser &parser,
     return failure();
 
   attrsList.push_back(helper::getDictionaryAttr(
-      parser.getBuilder(), "hir.bus.ports",
+      "hir.bus.ports",
       ArrayAttr::get(context,
                      SmallVector<Attribute>({StringAttr::get(
                          parser.getBuilder().getContext(), busPort)}))));
   return success();
 }
 
-static ParseResult parseOptionalIterArgs(
-    OpAsmParser &parser,
-    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &entryArgs,
-    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
-    SmallVectorImpl<Type> &operandTypes, ArrayAttr &delays) {
+static ParseResult
+parseOptionalIterArgs(OpAsmParser &parser,
+                      SmallVectorImpl<OpAsmParser::Argument> &entryArgs,
+                      SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
+                      ArrayAttr &delays) {
 
   if (parser.parseOptionalKeyword("iter_args"))
     return success();
@@ -136,18 +84,17 @@ static ParseResult parseOptionalIterArgs(
   if (parser.parseLParen())
     return failure();
   do {
-    OpAsmParser::UnresolvedOperand arg, operand;
-    Type operandTy;
+    OpAsmParser::Argument arg;
+    OpAsmParser::UnresolvedOperand operand;
     int64_t delay = 0;
-    if (parser.parseRegionArgument(arg) || parser.parseEqual() ||
-        parser.parseOperand(operand) || parser.parseColonType(operandTy))
+    if (parser.parseArgument(arg) || parser.parseEqual() ||
+        parser.parseOperand(operand) || parser.parseColonType(arg.type))
       return failure();
     if (succeeded(parser.parseOptionalKeyword("delay")))
       if (parser.parseInteger(delay))
         return failure();
     entryArgs.push_back(arg);
     operands.push_back(operand);
-    operandTypes.push_back(operandTy);
     delayAttrs.push_back(parser.getBuilder().getI64IntegerAttr(delay));
   } while (succeeded(parser.parseOptionalComma()));
   if (parser.parseRParen())
@@ -533,7 +480,9 @@ ParseResult CallOp::parse(OpAsmParser &parser, OperationState &result) {
     return failure();
   if (parser.parseKeyword("at"))
     return failure();
-  parseTimeAndOffset(parser, tstart, offset);
+
+  if (failed(parseTimeAndOffset(parser, tstart, offset)))
+    return failure();
 
   if (parseWithSSANames(parser, result.attributes))
     return failure();
@@ -651,7 +600,7 @@ void CallOp::print(OpAsmPrinter &printer) {
 ParseResult IfOp::parse(OpAsmParser &parser, OperationState &result) {
   OpAsmParser::UnresolvedOperand cond;
   OpAsmParser::UnresolvedOperand tstart;
-  OpAsmParser::UnresolvedOperand timevar;
+  OpAsmParser::Argument timevar;
   IntegerAttr offsetAttr;
   SmallVector<Type> resultTypes;
   ArrayAttr resultAttrs;
@@ -662,11 +611,14 @@ ParseResult IfOp::parse(OpAsmParser &parser, OperationState &result) {
 
   // parse time.
   if (parser.parseKeyword("at") || parser.parseKeyword("time") ||
-      parser.parseLParen() || parser.parseRegionArgument(timevar) ||
+      parser.parseLParen() || parser.parseArgument(timevar) ||
       parser.parseEqual())
     return failure();
+  timevar.type = TimeType::get(parser.getContext());
 
-  parseTimeAndOffset(parser, tstart, offsetAttr);
+  if (failed(parseTimeAndOffset(parser, tstart, offsetAttr)))
+    return failure();
+
   if (parser.parseRParen())
     return failure();
 
@@ -694,14 +646,15 @@ ParseResult IfOp::parse(OpAsmParser &parser, OperationState &result) {
   Region *ifBody = result.addRegion();
   Region *elseBody = result.addRegion();
 
-  if (parser.parseRegion(*ifBody, {timevar}, {hir::TimeType::get(context)}))
+  if (parser.parseRegion(*ifBody, timevar))
     return failure();
   if (parser.parseKeyword("else"))
     return failure();
-  if (parser.parseRegion(*elseBody, {timevar}, {hir::TimeType::get(context)}))
+  if (parser.parseRegion(*elseBody, timevar))
     return failure();
 
-  parseWithSSANames(parser, result.attributes);
+  if (failed(parseWithSSANames(parser, result.attributes)))
+    return failure();
 
   // IfOp::ensureTerminator(*ifBody, builder, result.location);
   return success();
@@ -737,11 +690,10 @@ void IfOp::print(OpAsmPrinter &printer) {
 // Example:
 // hir.while(%b) at iter_time(%tw = %t + 1){}
 ParseResult WhileOp::parse(OpAsmParser &parser, OperationState &result) {
-  OpAsmParser::UnresolvedOperand iterTimeVar;
+  OpAsmParser::Argument iterTimeVar;
   OpAsmParser::UnresolvedOperand conditionVar;
-  SmallVector<OpAsmParser::UnresolvedOperand> iterArgs;
-  SmallVector<OpAsmParser::UnresolvedOperand> regionIterArgs;
-  SmallVector<Type> iterArgTypes;
+  SmallVector<OpAsmParser::UnresolvedOperand> iterArgOperands;
+  SmallVector<OpAsmParser::Argument> iterArgs;
   ArrayAttr iterArgDelays;
   OpAsmParser::UnresolvedOperand tstart;
   IntegerAttr offset;
@@ -749,13 +701,12 @@ ParseResult WhileOp::parse(OpAsmParser &parser, OperationState &result) {
   if (parser.parseOperand(conditionVar))
     return failure();
 
-  if (parseOptionalIterArgs(parser, regionIterArgs, iterArgs, iterArgTypes,
-                            iterArgDelays))
+  if (parseOptionalIterArgs(parser, iterArgs, iterArgOperands, iterArgDelays))
     return failure();
   if (parser.parseKeyword("iter_time") || parser.parseLParen() ||
-      parser.parseRegionArgument(iterTimeVar) || parser.parseEqual())
+      parser.parseArgument(iterTimeVar) || parser.parseEqual())
     return failure();
-
+  iterTimeVar.type = TimeType::get(parser.getContext());
   if (parseTimeAndOffset(parser, tstart, offset) || parser.parseRParen())
     return failure();
 
@@ -763,9 +714,9 @@ ParseResult WhileOp::parse(OpAsmParser &parser, OperationState &result) {
                             result.operands))
     return failure();
 
-  if (!iterArgs.empty())
-    if (parser.resolveOperands(iterArgs, iterArgTypes, parser.getNameLoc(),
-                               result.operands))
+  if (!iterArgOperands.empty())
+    if (parser.resolveOperands(iterArgOperands, getTypes(iterArgs),
+                               parser.getNameLoc(), result.operands))
       return failure();
   if (parser.resolveOperand(
           tstart, hir::TimeType::get(parser.getBuilder().getContext()),
@@ -775,20 +726,19 @@ ParseResult WhileOp::parse(OpAsmParser &parser, OperationState &result) {
   if (offset)
     result.addAttribute("offset", offset);
 
-  if (!iterArgs.empty())
+  if (!iterArgOperands.empty())
     result.addAttribute("iter_arg_delays", iterArgDelays);
 
-  regionIterArgs.push_back(iterTimeVar);
-  iterArgTypes.push_back(hir::TimeType::get(parser.getContext()));
+  iterArgs.push_back(iterTimeVar);
 
   Region *body = result.addRegion();
-  if (parser.parseRegion(*body, regionIterArgs, iterArgTypes))
+  if (parser.parseRegion(*body, iterArgs))
     return failure();
 
   // Parse the attr-dict
   if (parseWithSSANames(parser, result.attributes))
     return failure();
-  result.addTypes(iterArgTypes);
+  result.addTypes(getTypes(iterArgs));
   return success();
 }
 
@@ -814,25 +764,21 @@ void WhileOp::print(OpAsmPrinter &printer) {
 // hir.for %i = %l to %u step %s iter_time(%ti = %t + 1){...}
 ParseResult ForOp::parse(OpAsmParser &parser, OperationState &result) {
   auto *context = parser.getBuilder().getContext();
-  Type inductionVarTy;
 
-  OpAsmParser::UnresolvedOperand iterTimeVar;
-  OpAsmParser::UnresolvedOperand inductionVar;
+  OpAsmParser::Argument iterTimeVar;
+  OpAsmParser::Argument inductionVar;
   OpAsmParser::UnresolvedOperand lb;
   OpAsmParser::UnresolvedOperand ub;
   OpAsmParser::UnresolvedOperand step;
-  SmallVector<OpAsmParser::UnresolvedOperand> iterArgs;
-  SmallVector<OpAsmParser::UnresolvedOperand> regionIterArgs;
-  SmallVector<Type> iterArgTypes;
+  SmallVector<OpAsmParser::UnresolvedOperand> iterArgOperands;
+  SmallVector<OpAsmParser::Argument> iterArgs;
   ArrayAttr iterArgDelays;
 
   OpAsmParser::UnresolvedOperand tstart;
   IntegerAttr offset;
 
   // Parse the induction variable followed by '='.
-  auto inductionVarLoc = parser.getCurrentLocation();
-  if (parser.parseRegionArgument(inductionVar) ||
-      parser.parseColonType(inductionVarTy) || parser.parseEqual())
+  if (parser.parseArgument(inductionVar, true) || parser.parseEqual())
     return failure();
 
   // Parse loop bounds.
@@ -842,52 +788,51 @@ ParseResult ForOp::parse(OpAsmParser &parser, OperationState &result) {
     return failure();
 
   // Parse iter_args.
-  if (parseOptionalIterArgs(parser, regionIterArgs, iterArgs, iterArgTypes,
-                            iterArgDelays))
+  if (parseOptionalIterArgs(parser, iterArgs, iterArgOperands, iterArgDelays))
     return failure();
 
   // Parse iter-time.
   if (parser.parseKeyword("iter_time") || parser.parseLParen())
     return failure();
 
-  if (parser.parseRegionArgument(iterTimeVar) || parser.parseEqual())
+  if (parser.parseArgument(iterTimeVar) || parser.parseEqual())
     return failure();
+  iterTimeVar.type = TimeType::get(parser.getContext());
 
   if (parseTimeAndOffset(parser, tstart, offset) || parser.parseRParen())
     return failure();
 
   // resolve the loop bounds.
-  if (parser.resolveOperand(lb, inductionVarTy, result.operands) ||
-      parser.resolveOperand(ub, inductionVarTy, result.operands) ||
-      parser.resolveOperand(step, inductionVarTy, result.operands))
+  if (parser.resolveOperand(lb, inductionVar.type, result.operands) ||
+      parser.resolveOperand(ub, inductionVar.type, result.operands) ||
+      parser.resolveOperand(step, inductionVar.type, result.operands))
     return failure();
 
-  if (!iterArgs.empty() && failed(parser.resolveOperands(
-                               iterArgs, iterArgTypes,
-                               parser.getCurrentLocation(), result.operands)))
+  SmallVector<Type> iterArgTypes = getTypes(iterArgs);
+  if (!iterArgOperands.empty() &&
+      failed(parser.resolveOperands(iterArgOperands, iterArgTypes,
+                                    parser.getCurrentLocation(),
+                                    result.operands)))
     return failure();
 
   // resolve optional tstart and offset.
-  if (parser.resolveOperand(tstart, TimeType::get(context), result.operands))
+  if (parser.resolveOperand(tstart, iterTimeVar.type, result.operands))
     return failure();
   if (offset)
     result.addAttribute("offset", offset);
-  if (iterArgs.size() > 0)
+  if (iterArgOperands.size() > 0)
     result.addAttribute("iter_arg_delays", iterArgDelays);
 
   SmallVector<Type> resultTypes(iterArgTypes);
-  regionIterArgs.push_back(inductionVar);
-  regionIterArgs.push_back(iterTimeVar);
-  iterArgTypes.push_back(inductionVarTy);
+  iterArgs.push_back(inductionVar);
+  iterArgs.push_back(iterTimeVar);
+  iterArgTypes.push_back(inductionVar.type);
   iterArgTypes.push_back(TimeType::get(context));
   resultTypes.push_back(TimeType::get(context));
 
-  if (failed(addNamesAttribute(context, "argNames", regionIterArgs, result)))
-    return parser.emitError(inductionVarLoc)
-           << "Failed to add names for induction var and time var";
   // Parse the body region.
   Region *body = result.addRegion();
-  if (parser.parseRegion(*body, regionIterArgs, iterArgTypes))
+  if (parser.parseRegion(*body, iterArgs))
     return failure();
 
   // Parse the attr-dict
@@ -927,8 +872,7 @@ Region &ForOp::getLoopBody() { return body(); }
 /// Example:
 /// hir.def @foo at %t (%x :i32 delay 1, %y: f32) ->(%out: i1 delay 4){}
 ParseResult parseArgList(OpAsmParser &parser,
-                         SmallVectorImpl<OpAsmParser::UnresolvedOperand> &args,
-                         SmallVectorImpl<Type> &argTypes,
+                         SmallVectorImpl<OpAsmParser::Argument> &args,
                          SmallVectorImpl<DictionaryAttr> &argAttrs) {
 
   auto *context = parser.getBuilder().getContext();
@@ -938,20 +882,21 @@ ParseResult parseArgList(OpAsmParser &parser,
     while (1) {
       // Parse operand and type
       auto operandLoc = parser.getCurrentLocation();
-      if (parseNamedOperandColonType(parser, args, argTypes))
+      OpAsmParser::Argument arg;
+      if (parser.parseArgument(arg, true))
         return failure();
-      auto argTy = argTypes.back();
+      args.push_back(arg);
       // Parse argAttr
-      if (helper::isBuiltinSizedType(argTy)) {
+      if (helper::isBuiltinSizedType(arg.type)) {
         if (parseDelayAttr(parser, argAttrs))
           return failure();
-      } else if (argTy.isa<hir::TimeType>()) {
+      } else if (arg.type.isa<hir::TimeType>()) {
         argAttrs.push_back(
             DictionaryAttr::get(context, SmallVector<NamedAttribute>({})));
-      } else if (argTy.isa<hir::MemrefType>()) {
+      } else if (arg.type.isa<hir::MemrefType>()) {
         if (parseMemrefPortsAttr(parser, argAttrs))
           return failure();
-      } else if (helper::isBusLikeType(argTy)) {
+      } else if (helper::isBusLikeType(arg.type)) {
         if (parseBusPortsAttr(parser, argAttrs))
           return failure();
       } else
@@ -968,32 +913,30 @@ ParseResult parseArgList(OpAsmParser &parser,
 
 ParseResult
 parseFuncSignature(OpAsmParser &parser, hir::FuncType &funcTy,
-                   SmallVectorImpl<OpAsmParser::UnresolvedOperand> &args,
-                   SmallVectorImpl<OpAsmParser::UnresolvedOperand> &results) {
-  SmallVector<Type, 4> argTypes;
+                   SmallVectorImpl<OpAsmParser::Argument> &args,
+                   SmallVectorImpl<OpAsmParser::Argument> &results) {
   SmallVector<DictionaryAttr> argAttrs;
-  SmallVector<Type, 4> resultTypes;
   SmallVector<DictionaryAttr> resultAttrs;
   // parse args
-  if (parseArgList(parser, args, argTypes, argAttrs))
+  if (parseArgList(parser, args, argAttrs))
     return failure();
 
   // If result types present then parse them.
   if (succeeded(parser.parseOptionalArrow()))
-    if (parseArgList(parser, results, resultTypes, resultAttrs))
+    if (parseArgList(parser, results, resultAttrs))
       return failure();
 
-  funcTy = hir::FuncType::get(parser.getBuilder().getContext(), argTypes,
-                              argAttrs, resultTypes, resultAttrs);
+  funcTy = hir::FuncType::get(parser.getBuilder().getContext(), getTypes(args),
+                              argAttrs, getTypes(results), resultAttrs);
   return success();
 }
-ParseResult
-parseFuncDecl(OpAsmParser &parser, OperationState &result,
-              SmallVectorImpl<OpAsmParser::UnresolvedOperand> &entryArgs,
-              hir::FuncType &funcTy) {
 
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> resultArgs;
-  OpAsmParser::UnresolvedOperand tstart;
+ParseResult parseFuncDecl(OpAsmParser &parser, OperationState &result,
+                          SmallVectorImpl<OpAsmParser::Argument> &entryArgs,
+                          hir::FuncType &funcTy) {
+
+  SmallVector<OpAsmParser::Argument, 4> resultArgs;
+  OpAsmParser::Argument tstart;
   auto &builder = parser.getBuilder();
   // Parse the name as a symbol.
   StringAttr functionName;
@@ -1001,12 +944,9 @@ parseFuncDecl(OpAsmParser &parser, OperationState &result,
                              result.attributes))
     return failure();
   // Parse tstart.
-  if (parser.parseKeyword("at") || parser.parseRegionArgument(tstart))
+  if (parser.parseKeyword("at") || parser.parseArgument(tstart))
     return failure();
-  if (tstart.name.empty())
-    return parser.emitError(parser.getCurrentLocation())
-           << "Expected valid name for start time.";
-
+  tstart.type = TimeType::get(parser.getContext());
   //  Parse the function signature.
   if (parseFuncSignature(parser, funcTy, entryArgs, resultArgs))
     return failure();
@@ -1031,7 +971,7 @@ parseFuncDecl(OpAsmParser &parser, OperationState &result,
 }
 
 ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> entryArgs;
+  SmallVector<OpAsmParser::Argument, 4> entryArgs;
   hir::FuncType funcTy;
 
   auto &builder = parser.getBuilder();
@@ -1047,17 +987,19 @@ ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
     entryArgTypes.push_back(ty);
   }
 
-  if (parser.parseRegion(*body, entryArgs, entryArgTypes))
+  if (parser.parseRegion(*body, entryArgs))
     return failure();
 
-  parser.parseOptionalAttrDict(result.attributes);
+  if (failed(parser.parseOptionalAttrDict(result.attributes)))
+    return failure();
+
   FuncOp::ensureTerminator(*body, builder, result.location);
   return success();
 }
 
 ParseResult FuncExternOp::parse(OpAsmParser &parser, OperationState &result) {
 
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> entryArgs;
+  SmallVector<OpAsmParser::Argument, 4> entryArgs;
   hir::FuncType funcTy;
   if (parseFuncDecl(parser, result, entryArgs, funcTy))
     return failure();
@@ -1073,12 +1015,13 @@ ParseResult FuncExternOp::parse(OpAsmParser &parser, OperationState &result) {
   body->front().addArguments(
       entryArgTypes,
       SmallVector<Location>(entryArgTypes.size(), builder.getUnknownLoc()));
-  parser.parseOptionalAttrDict(result.attributes);
+  if (failed(parser.parseOptionalAttrDict(result.attributes)))
+    return failure();
   FuncExternOp::ensureTerminator(*body, builder, result.location);
   return success();
 }
 
-ParseResult printArgList(OpAsmPrinter &printer, ArrayRef<BlockArgument> args,
+static void printArgList(OpAsmPrinter &printer, ArrayRef<BlockArgument> args,
                          ArrayRef<Type> argTypes,
                          ArrayRef<DictionaryAttr> argAttrs) {
   assert(args.size() == argTypes.size() + 1);
@@ -1100,10 +1043,9 @@ ParseResult printArgList(OpAsmPrinter &printer, ArrayRef<BlockArgument> args,
     }
   }
   printer << ")";
-
-  return success();
 }
-ParseResult printArgList(OpAsmPrinter &printer, ArrayAttr argNames,
+
+static void printArgList(OpAsmPrinter &printer, ArrayAttr argNames,
                          ArrayRef<Type> argTypes,
                          ArrayRef<DictionaryAttr> argAttrs) {
   printer << "(";
@@ -1125,8 +1067,6 @@ ParseResult printArgList(OpAsmPrinter &printer, ArrayAttr argNames,
     }
   }
   printer << ")";
-
-  return success();
 }
 
 void printFuncSignature(OpAsmPrinter &printer, hir::FuncType funcTy,
@@ -1153,7 +1093,7 @@ void FuncExternOp::print(OpAsmPrinter &printer) {
   printer.printSymbolName(this->sym_name());
   printer << " at " << args.back() << " ";
   printFuncSignature(printer, this->getFuncType(), args,
-                     this->resultNames().getValueOr(ArrayAttr()));
+                     this->resultNames().value_or(ArrayAttr()));
   printer.printOptionalAttrDict(
       this->getOperation()->getAttrs(),
       {"funcTy", "function_type", "arg_attrs", "res_attrs", "sym_name"});
@@ -1170,7 +1110,7 @@ void FuncOp::print(OpAsmPrinter &printer) {
 
   printFuncSignature(printer, this->getFuncType(),
                      this->getRegion().front().getArguments(),
-                     this->resultNames().getValueOr(ArrayAttr()));
+                     this->resultNames().value_or(ArrayAttr()));
 
   printer.printRegion(body, /*printEntryBlockArgs=*/false,
                       /*printBlockTerminators=*/true);
@@ -1230,15 +1170,14 @@ void BusTensorInsertElementOp::print(OpAsmPrinter &printer) {
 /// BusMapOp parser and printer
 ParseResult BusMapOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::UnresolvedOperand> operands;
-  SmallVector<Type> regionArgTypes;
-  SmallVector<OpAsmParser::UnresolvedOperand> regionArgs;
+  SmallVector<OpAsmParser::Argument> regionArgs;
   if (parser.parseLParen())
     return failure();
 
   do {
-    OpAsmParser::UnresolvedOperand regionArg;
+    OpAsmParser::Argument regionArg;
     OpAsmParser::UnresolvedOperand operand;
-    if (parser.parseRegionArgument(regionArg) || parser.parseEqual() ||
+    if (parser.parseArgument(regionArg) || parser.parseEqual() ||
         parser.parseOperand(operand))
       return failure();
     operands.push_back(operand);
@@ -1252,20 +1191,21 @@ ParseResult BusMapOp::parse(OpAsmParser &parser, OperationState &result) {
   if (parser.parseType(funcTy))
     return failure();
 
-  for (auto ty : funcTy.getInputs()) {
-    auto busTy = ty.dyn_cast<hir::BusType>();
-    if (!busTy)
-      return parser.emitError(parser.getNameLoc())
-             << "Inputs must be hir.bus type.";
-    regionArgTypes.push_back(busTy.getElementType());
+  for (size_t i = 0; i < funcTy.getNumInputs(); i++) {
+    auto ty = funcTy.getInputs()[i].dyn_cast<hir::BusType>();
+    if (!ty)
+      return parser.emitError(parser.getCurrentLocation(),
+                              "All input types must be hir.bus type.");
+    regionArgs[i].type = ty.getElementType();
   }
-
   Region *body = result.addRegion();
-  if (parser.parseRegion(*body, regionArgs, regionArgTypes))
+  if (parser.parseRegion(*body, regionArgs))
     return failure();
 
-  parser.resolveOperands(operands, funcTy.getInputs(), parser.getNameLoc(),
-                         result.operands);
+  if (failed(parser.resolveOperands(operands, funcTy.getInputs(),
+                                    parser.getNameLoc(), result.operands)))
+    return failure();
+
   result.addTypes(funcTy.getResults());
   return success();
 }
@@ -1298,15 +1238,14 @@ void BusMapOp::print(OpAsmPrinter &printer) {
 /// BusTensorMapOp parser and printer
 ParseResult BusTensorMapOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::UnresolvedOperand> operands;
-  SmallVector<OpAsmParser::UnresolvedOperand> regionArgs;
-  SmallVector<Type> regionArgTypes;
+  SmallVector<OpAsmParser::Argument> regionArgs;
   if (parser.parseLParen())
     return failure();
 
   do {
-    OpAsmParser::UnresolvedOperand regionArg;
+    OpAsmParser::Argument regionArg;
     OpAsmParser::UnresolvedOperand operand;
-    if (parser.parseRegionArgument(regionArg) || parser.parseEqual() ||
+    if (parser.parseArgument(regionArg) || parser.parseEqual() ||
         parser.parseOperand(operand))
       return failure();
     operands.push_back(operand);
@@ -1320,19 +1259,22 @@ ParseResult BusTensorMapOp::parse(OpAsmParser &parser, OperationState &result) {
   if (parser.parseType(funcTy))
     return failure();
 
-  for (auto ty : funcTy.getInputs()) {
-    auto busTensorTy = ty.dyn_cast<hir::BusTensorType>();
-    if (!busTensorTy)
-      return parser.emitError(parser.getNameLoc())
-             << "Inputs must be hir.bus_tensor type.";
-    regionArgTypes.push_back(busTensorTy.getElementType());
+  for (size_t i = 0; i < funcTy.getNumInputs(); i++) {
+    auto ty = funcTy.getInputs()[i].dyn_cast<hir::BusType>();
+    if (!ty)
+      return parser.emitError(parser.getCurrentLocation(),
+                              "All input types must be hir.bus type.");
+    regionArgs[i].type = ty.getElementType();
   }
+
   Region *body = result.addRegion();
-  if (parser.parseRegion(*body, regionArgs, regionArgTypes))
+  if (parser.parseRegion(*body, regionArgs))
     return failure();
 
-  parser.resolveOperands(operands, funcTy.getInputs(), parser.getNameLoc(),
-                         result.operands);
+  if (failed(parser.resolveOperands(operands, funcTy.getInputs(),
+                                    parser.getNameLoc(), result.operands)))
+    return failure();
+
   result.addTypes(funcTy.getResults());
   return success();
 }

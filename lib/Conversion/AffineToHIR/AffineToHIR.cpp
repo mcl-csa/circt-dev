@@ -6,10 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "circt/Conversion/AffineToHIR.h"
 #include "../PassDetail.h"
 #include "AffineToHIRUtils.h"
 #include "SchedulingAnalysis.h"
+#include "circt/Conversion/AffineToHIR.h"
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
@@ -388,7 +388,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineLoadOp op) {
   auto tRegion = builder.getInsertionBlock()->getArguments().back();
   assert(tRegion);
   auto hirIndices = getFlattenedHIRIndices(
-      op.indices(), op.getAffineMap(),
+      op.getIndices(), op.getAffineMap(),
       hirMem.getType().dyn_cast<hir::MemrefType>(), tRegion, offset);
   auto loadOp = builder.create<hir::LoadOp>(
       op->getLoc(), getHIRValueType(op.getResult().getType()), hirMem,
@@ -415,11 +415,11 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineStoreOp op) {
   auto tRegion = builder.getInsertionBlock()->getArguments().back();
   assert(tRegion);
   auto hirIndices = getFlattenedHIRIndices(
-      op.indices(), op.getAffineMap(),
+      op.getIndices(), op.getAffineMap(),
       hirMem.getType().dyn_cast<hir::MemrefType>(), tRegion, offset);
 
-  auto hirValue = valueConverter.getDelayedBlockLocalValue(builder, op.value(),
-                                                           tRegion, offset);
+  auto hirValue = valueConverter.getDelayedBlockLocalValue(
+      builder, op.getValue(), tRegion, offset);
 
   builder.create<hir::StoreOp>(op->getLoc(), hirValue.getValue(), hirMem,
                                hirIndices, port, delay, tRegion, offsetAttr);
@@ -504,7 +504,7 @@ LogicalResult AffineToHIRImpl::visitFFIOp(Operation *operation) {
 
   auto topLevelModuleOp = operation->getParentOfType<mlir::ModuleOp>();
   assert(topLevelModuleOp);
-  auto hirFuncExternOperation = topLevelModuleOp.lookupSymbol(hirFuncAttr);
+  auto *hirFuncExternOperation = topLevelModuleOp.lookupSymbol(hirFuncAttr);
   if (!hirFuncExternOperation)
     return operation->emitError("Could not find declaration of hir function ")
            << hirFuncAttr << ".";

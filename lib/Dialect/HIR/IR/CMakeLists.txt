@@ -7,6 +7,7 @@ add_circt_dialect_library(CIRCTHIR
   HIROpVerifier.cpp  
   HIROpCanonicalizer.cpp
   HIRTypeSyntax.cpp
+  HIRTypeExtraClassDecls.cpp
   HIRTypeVerifiers.cpp
   HIRBuilders.cpp
   HIROpExtraClassDeclaration.cpp
@@ -24,8 +25,8 @@ add_circt_dialect_library(CIRCTHIR
   Support
 
   LINK_LIBS PUBLIC
-  MLIRArithmetic
-  MLIRFunc
+  MLIRArithmeticDialect
+  MLIRFuncDialect
   MLIRIR
   MLIRSideEffectInterfaces
   MLIRControlFlowInterfaces

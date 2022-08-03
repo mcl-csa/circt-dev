@@ -5,6 +5,7 @@
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/PatternMatch.h"
 
 namespace helper {
@@ -27,16 +28,15 @@ mlir::ParseResult parseIntegerAttr(mlir::IntegerAttr &value,
                                    mlir::StringRef attrName,
                                    mlir::OpAsmParser &parser,
                                    mlir::OperationState &result);
-mlir::DictionaryAttr getDictionaryAttr(mlir::MLIRContext *context,
-                                       mlir::StringRef name,
-                                       mlir::Attribute attr);
 
-mlir::DictionaryAttr getDictionaryAttr(mlir::Builder &builder,
-                                       mlir::StringRef name,
+mlir::DictionaryAttr getDictionaryAttr(mlir::StringRef name,
                                        mlir::Attribute attr);
+mlir::DictionaryAttr getDictionaryAttr(mlir::MLIRContext *);
+
 mlir::DictionaryAttr getDictionaryAttr(mlir::RewriterBase &builder,
                                        mlir::StringRef name,
                                        mlir::Attribute attr);
+
 llvm::Optional<int64_t> calcLinearIndex(mlir::ArrayRef<mlir::Value> indices,
                                         mlir::ArrayRef<int64_t> dims);
 

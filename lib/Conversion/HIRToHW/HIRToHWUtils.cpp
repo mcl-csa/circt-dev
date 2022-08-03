@@ -207,7 +207,7 @@ Value getDelayedValue(OpBuilder *builder, Value input, int64_t delay,
     regInput = input;
   }
   auto bodyCtor = [builder, &reg, &regInput] {
-    builder->create<sv::PAssignOp>(builder->getUnknownLoc(), reg.result(),
+    builder->create<sv::PAssignOp>(builder->getUnknownLoc(), reg.getResult(),
                                    regInput);
   };
   Value regResetValue;
@@ -220,7 +220,7 @@ Value getDelayedValue(OpBuilder *builder, Value input, int64_t delay,
     regResetValue = zeroBit;
 
   auto resetCtor = [builder, &reg, &regResetValue] {
-    builder->create<sv::PAssignOp>(builder->getUnknownLoc(), reg.result(),
+    builder->create<sv::PAssignOp>(builder->getUnknownLoc(), reg.getResult(),
                                    regResetValue);
   };
 

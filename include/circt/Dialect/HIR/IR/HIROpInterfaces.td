@@ -1,7 +1,7 @@
-#ifndef HIR_OP_INTERFACES
-#define HIR_OP_INTERFACES
+#ifndef HIR_OPINTERFACES
+#define HIR_OPINTERFACES
 
-include "mlir/IR/OpBase.td"
+include "HIRDialect.td"
 
 def RegionOp : OpInterface<"RegionOp"> {
 let cppNamespace = "circt::hir"; 
@@ -72,5 +72,4 @@ let cppNamespace = "circt::hir";
     >,
   ];
 }
-
 #endif

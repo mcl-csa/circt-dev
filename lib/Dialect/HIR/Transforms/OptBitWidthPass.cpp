@@ -27,7 +27,7 @@ unsigned int getMinBitWidth(Value v, const DenseSet<Operation *> ignoredUsers) {
     if (ignoredUsers.contains(user))
       continue;
     if (auto extractOp = dyn_cast<comb::ExtractOp>(user)) {
-      if (extractOp.lowBit() == 0) {
+      if (extractOp.getLowBit() == 0) {
         bitwidth = std::max(
             bitwidth,
             (int64_t)extractOp.getResult().getType().getIntOrFloatBitWidth());
@@ -87,7 +87,7 @@ LogicalResult OptBitWidthPass::visitOp(hir::ForOp op) {
     // have a cycle iterArg -> delay -> NextIterOp (back to iterArg) then
     // ignore such use.
     llvm::DenseSet<Operation *> ignoredUsers;
-    for (auto user : arg.getUsers()) {
+    for (auto *user : arg.getUsers()) {
       bool isIgnoredUser = false;
       if (isa<DelayOp>(user)) {
         auto delayedArgUses = user->getResult(0).getUses();
@@ -112,7 +112,7 @@ LogicalResult OptBitWidthPass::visitOp(hir::ForOp op) {
           builder.getUnknownLoc(), builder.getIntegerType(bitwidth),
           op.getIterArgOperand(i), builder.getI32IntegerAttr(0));
       op.setIterArgOperand(i, newValue);
-      for (auto user : ignoredUsers) {
+      for (auto *user : ignoredUsers) {
         auto delayOp = dyn_cast<DelayOp>(user);
         delayOp.getResult().setType(builder.getIntegerType(bitwidth));
       }

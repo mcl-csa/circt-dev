@@ -116,6 +116,15 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 LogicalResult
+BusType::verify(mlir::function_ref<InFlightDiagnostic()> emitError,
+                Type elementTy) {
+  if (!helper::isBuiltinSizedType(elementTy))
+    emitError() << "Bus inner type can only be an integer/float or a "
+                   "tuple/tensor of these types.";
+  return success();
+}
+
+LogicalResult
 BusTensorType::verify(mlir::function_ref<InFlightDiagnostic()> emitError,
                       ArrayRef<int64_t> shape, Type elementTy) {
   if (!helper::isBuiltinSizedType(elementTy))

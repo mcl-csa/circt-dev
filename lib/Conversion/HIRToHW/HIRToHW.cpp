@@ -373,9 +373,9 @@ LogicalResult HIRToHWPass::visitOp(hir::BusRecvOp op) {
 LogicalResult HIRToHWPass::visitOp(hir::ReturnOp op) {
   auto funcOp = op->getParentOfType<hir::FuncOp>();
 
-  auto portMap = getHWModulePortMap(
-      *builder, op.getLoc(), funcOp.getFuncType(), funcOp.argNames(),
-      funcOp.resultNames().getValueOr(ArrayAttr()));
+  auto portMap = getHWModulePortMap(*builder, op.getLoc(), funcOp.getFuncType(),
+                                    funcOp.argNames(),
+                                    funcOp.resultNames().value_or(ArrayAttr()));
   auto funcArgs = funcOp.getFuncBody().front().getArguments();
 
   // hwOutputs are the outputs to be returned in the hw module.
@@ -435,7 +435,7 @@ Value instantiateBusSelectLogic(OpBuilder &builder, Value selectBus,
 LogicalResult HIRToHWPass::visitOp(hir::FuncExternOp op) {
   auto portMap =
       getHWModulePortMap(*builder, op.getLoc(), op.getFuncType(), op.argNames(),
-                         op.resultNames().getValueOr(ArrayAttr()));
+                         op.resultNames().value_or(ArrayAttr()));
   auto name = builder->getStringAttr(op.getName());
   auto verilogNameAttr = op->getAttrOfType<StringAttr>("verilogName");
   auto hwOp = builder->create<hw::HWModuleExternOp>(
@@ -474,7 +474,7 @@ void HIRToHWPass::updateHIRToHWMapForFuncInputs(
 LogicalResult HIRToHWPass::visitOp(hir::FuncOp op) {
   auto portMap =
       getHWModulePortMap(*builder, op.getLoc(), op.getFuncType(), op.argNames(),
-                         op.resultNames().getValueOr(ArrayAttr()));
+                         op.resultNames().value_or(ArrayAttr()));
   auto name = builder->getStringAttr(op.getNameAttr().getValue().str());
 
   this->hwModuleOp = builder->create<hw::HWModuleOp>(op.getLoc(), name,

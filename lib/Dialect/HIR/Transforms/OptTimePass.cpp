@@ -23,7 +23,7 @@ LogicalResult OptTimePass::visitOp(hir::ScheduledOp op) {
   int64_t offset = optTime.getOffset();
   auto parentOp = dyn_cast<RegionOp>(op.getOperation()->getParentOp());
   auto ii = parentOp.getRegionII();
-  if (offset < 16 || ii.getValueOr(-1) <= optTime.getOffset()) {
+  if (offset < 16 || ii.value_or(-1) <= optTime.getOffset()) {
     op.setStartTime(optTime);
     return success();
   }

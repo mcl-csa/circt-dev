@@ -19,10 +19,10 @@ static AffineMap getAffineMapForMemoryAccess(Operation *operation) {
 
 static OperandRange getMemIndices(Operation *operation) {
   if (auto affineLoadOp = dyn_cast<AffineLoadOp>(operation)) {
-    return affineLoadOp.indices();
+    return affineLoadOp.getIndices();
   }
   if (auto affineStoreOp = dyn_cast<AffineStoreOp>(operation)) {
-    return affineStoreOp.indices();
+    return affineStoreOp.getIndices();
   }
   llvm_unreachable("Operation should be AffineLoadOp or AffineStoreOp.");
 }
@@ -47,15 +47,15 @@ int getLoopII(AffineForOp affineForOp) {
 Value getMemrefFromAffineLoadOrStoreOp(Operation *operation) {
   assert(isa<AffineLoadOp>(operation) || isa<AffineStoreOp>(operation));
   if (auto storeOp = dyn_cast<AffineStoreOp>(operation))
-    return storeOp.memref();
+    return storeOp.getMemRef();
   auto loadOp = dyn_cast<AffineLoadOp>(operation);
-  return loadOp.memref();
+  return loadOp.getMemRef();
 }
 
 int64_t getMemOpSafeDelay(Operation *operation,
                           DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr) {
   if (auto affineStoreOp = dyn_cast<mlir::AffineStoreOp>(operation)) {
-    auto ports = mapMemrefToPortsAttr[affineStoreOp.memref()];
+    auto ports = mapMemrefToPortsAttr[affineStoreOp.getMemRef()];
     for (auto port : ports) {
       if (helper::isMemrefWrPort(port)) {
         return helper::getMemrefPortWrLatency(port).getValue();
@@ -572,9 +572,9 @@ SchedulingILPHandler::getPortAssignments() {
   for (auto *operation : this->operations) {
     Value mem;
     if (auto affineLoadOp = dyn_cast<AffineLoadOp>(operation)) {
-      mem = affineLoadOp.memref();
+      mem = affineLoadOp.getMemRef();
     } else if (auto affineStoreOp = dyn_cast<AffineStoreOp>(operation)) {
-      mem = affineStoreOp.memref();
+      mem = affineStoreOp.getMemRef();
     } else {
       continue;
     }

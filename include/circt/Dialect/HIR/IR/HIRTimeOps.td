@@ -1,3 +1,8 @@
+include "mlir/Interfaces/SideEffectInterfaces.td"
+include "HIRDialect.td"
+include "HIRTypes.td"
+include "HIROpInterfaces.td"
+
 def DelayOp: HIR_Op<"delay",[NoSideEffect,DeclareOpInterfaceMethods<ScheduledOp>]>{
   let summary = "Delay operation";
   let description = [{
@@ -40,5 +45,3 @@ def TimeMaxOp: HIR_Op<"time.max",[NoSideEffect]>{
   let results = (outs HIR_TimeType : $res);
   let assemblyFormat = [{`(` $input_timevars `)` custom<WithSSANames>(attr-dict) `:` type($res)}];
 }
-
-

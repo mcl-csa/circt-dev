@@ -3,7 +3,10 @@
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "circt/Dialect/HW/HWOps.h"
+#include "circt/Support/LLVM.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/PatternMatch.h"
@@ -49,16 +52,15 @@ IntegerAttr getI64IntegerAttr(MLIRContext *context, int value) {
   return IntegerAttr::get(IntegerType::get(context, 64), APInt(64, value));
 }
 
-DictionaryAttr getDictionaryAttr(mlir::Builder &builder, StringRef name,
-                                 Attribute attr) {
-  return DictionaryAttr::get(builder.getContext(),
-                             builder.getNamedAttr(name, attr));
+DictionaryAttr getDictionaryAttr(MLIRContext *context) {
+  return DictionaryAttr::get(context, SmallVector<NamedAttribute>({}));
 }
 
-DictionaryAttr getDictionaryAttr(mlir::MLIRContext *context, StringRef name,
-                                 Attribute attr) {
-  Builder builder(context);
-  return DictionaryAttr::get(context, builder.getNamedAttr(name, attr));
+DictionaryAttr getDictionaryAttr(StringRef name, Attribute attr) {
+  mlir::Builder builder(attr.getContext());
+  assert(name != "");
+  return DictionaryAttr::get(builder.getContext(),
+                             builder.getNamedAttr(name, attr));
 }
 
 DictionaryAttr getDictionaryAttr(mlir::RewriterBase &rewriter, StringRef name,

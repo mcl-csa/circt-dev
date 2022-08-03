@@ -5,8 +5,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
+#include "circt/Dialect/HIR/IR/HIR.h"
 
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWOps.h"
@@ -14,6 +14,7 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/Types.h"
+#include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
@@ -72,14 +73,30 @@ struct HIRInlinerInterface : public mlir::DialectInlinerInterface {
 //-----------------------------------------------------------------------------
 // HIR Dialect
 //-----------------------------------------------------------------------------
+
+#define GET_TYPEDEF_CLASSES
+#include "circt/Dialect/HIR/IR/HIRTypes.cpp.inc"
+#define GET_ATTRDEF_CLASSES
+#include "circt/Dialect/HIR/IR/HIRAttrs.cpp.inc"
+
 void HIRDialect::initialize() {
-  addTypes<TimeType, BusType, BusTensorType, FuncType, MemrefType>();
+
+  addTypes<
+#define GET_TYPEDEF_LIST
+#include "circt/Dialect/HIR/IR/HIRTypes.cpp.inc"
+      >();
+
   addOperations<
 #define GET_OP_LIST
 #include "circt/Dialect/HIR/IR/HIR.cpp.inc"
       >();
+
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "circt/Dialect/HIR/IR/HIRAttrs.cpp.inc"
+      >();
+
   addInterfaces<HIRInlinerInterface>();
-  addAttributes<MemKindEnumAttr>();
 }
 
 Operation *HIRDialect::materializeConstant(OpBuilder &builder, Attribute value,
@@ -92,7 +109,5 @@ Operation *HIRDialect::materializeConstant(OpBuilder &builder, Attribute value,
                                                value.dyn_cast<IntegerAttr>());
 }
 
-#define GET_ATTRDEF_CLASSES
-#include "circt/Dialect/HIR/IR/HIRAttrs.cpp.inc"
 #include "circt/Dialect/HIR/IR/HIRDialect.cpp.inc"
 #include "circt/Dialect/HIR/IR/HIREnums.cpp.inc"

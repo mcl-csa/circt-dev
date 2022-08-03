@@ -1,15 +1,87 @@
-def HIR_TimeType : DialectType<HIR_Dialect,CPred<"$_self.isa<TimeType>()">, "HIR time type">,
-    BuildableType<"TimeType::get($_builder.getContext())">;
+#ifndef HIR_TYPES
+#define HIR_TYPES
+include "mlir/IR/AttrTypeBase.td"
+include "HIRDialect.td"
 
-def HIR_MemrefType: DialectType<HIR_Dialect,CPred<"$_self.isa<MemrefType>()">, "HIR memref type ">,
-    BuildableType<"MemrefType::get($_builder.getContext())">;
+class HIRDialect_Type<string name, string typeMnemonic, list<Trait> traits = []>
+    : TypeDef<HIR_Dialect, name, traits> {
+  let mnemonic = typeMnemonic;
+}
 
-def HIR_FuncType: DialectType<HIR_Dialect,CPred<"$_self.isa<FuncType>()">, "HIR function type ">,
-    BuildableType<"FuncType::get($_builder.getContext())">;
+def HIR_TimeType : HIRDialect_Type<"Time", "time"> {
+  let summary = "hir.time type.";
+  let description = [{
+    This is the type of time variables in hir dialect.
+    Syntax: !hir.time
+  }];
 
-def HIR_BusType: DialectType<HIR_Dialect, CPred<"$_self.isa<BusType>()">, "HIR bus type ">,
-    BuildableType<"BusType::get($_builder.getContext())">;
+  let parameters = (ins );
+  let assemblyFormat = "";
+}
 
-def HIR_BusTensorType: DialectType<HIR_Dialect,
-CPred<"$_self.isa<BusTensorType>()">, "HIR bus_tensor type ">,
-    BuildableType<"BusTensorType::get($_builder.getContext())">;
+def HIR_MemrefType : HIRDialect_Type<"Memref", "memref"> {
+  let summary = "Memref type for hardware";
+  let description = [{
+    Memref type with support for banked dimensions.
+    Syntax: !hir.memref<16x(bank 4)x8xi32>
+  }];
+
+  let parameters = (ins ArrayRefParameter<"int64_t">:$shape,"Type":$elementType, ArrayRefParameter<"DimKind">:$dimKinds);
+  let assemblyFormat = "`<`custom<BankedDimensionList>($shape,$dimKinds) $elementType`>`";
+  let genVerifyDecl = 1;
+  let extraClassDeclaration = [{
+    int64_t getNumElementsPerBank();
+    int64_t getNumBanks();
+    SmallVector<int64_t> filterShape(DimKind dimKind);
+  }];
+}
+
+def HIR_FuncType : HIRDialect_Type<"Func", "func"> {
+  let summary = "Type of hir functions.";
+  let description = [{
+    Syntax: !hir.func<(i32,i32 delay 1)->(i64 delay 2)>
+  }];
+
+  let parameters = (ins 
+  ArrayRefParameter<"Type">:$inputTypes, 
+  ArrayRefParameter<"DictionaryAttr">:$inputAttrs,
+  ArrayRefParameter<"Type">:$resultTypes, 
+  ArrayRefParameter<"DictionaryAttr">: $resultAttrs);
+
+  let assemblyFormat = "`<`custom<TypedArgList>($inputTypes,$inputAttrs) `->` custom<TypedArgList>($resultTypes,$resultAttrs)`>`";
+  let genVerifyDecl = 1;
+  let extraClassDeclaration = [{
+    FunctionType getFunctionType();
+  }];
+}
+
+def HIR_BusType : HIRDialect_Type<"Bus", "bus"> {
+  let summary = "!hir.bus type.";
+  let description = [{
+    Syntax: !hir.bus<i32>
+  }];
+
+  let parameters = (ins "Type":$elementType);
+  let assemblyFormat = "`<`$elementType`>`";
+  let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    FunctionType getFunctionType();
+  }];
+}
+def HIR_BusTensorType : HIRDialect_Type<"BusTensor", "bus_tensor"> {
+  let summary = "!hir.bus_tensor type.";
+  let description = [{
+    Syntax: !hir.bus_tensor<i32>
+  }];
+
+  let parameters = (ins  ArrayRefParameter<"int64_t">:$shape, "Type":$elementType);
+  let assemblyFormat = "`<`custom<DimensionList>($shape)$elementType`>`";
+  let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    size_t getNumElements();
+  }];
+}
+
+#endif

@@ -191,10 +191,10 @@ size_t insertBusTypesAndAttrsForMemrefPort(
                                         memrefTy.getElementType());
 
   DictionaryAttr sendAttr = helper::getDictionaryAttr(
-      context, "hir.bus.ports",
+      "hir.bus.ports",
       ArrayAttr::get(context, StringAttr::get(context, "send")));
   DictionaryAttr recvAttr = helper::getDictionaryAttr(
-      context, "hir.bus.ports",
+      "hir.bus.ports",
       ArrayAttr::get(context, StringAttr::get(context, "recv")));
 
   std::string memName =
@@ -241,23 +241,23 @@ void addBusAttrsPerPort(size_t i, SmallVectorImpl<DictionaryAttr> &attrs,
   auto *context = memrefTy.getContext();
   if (memrefTy.getNumElementsPerBank() > 1) {
     attrs.push_back(helper::getDictionaryAttr(
-        context, "hir.bus.ports",
+        "hir.bus.ports",
         ArrayAttr::get(context, StringAttr::get(context, "send"))));
   }
   if (helper::getMemrefPortRdLatency(port)) {
     attrs.push_back(helper::getDictionaryAttr(
-        context, "hir.bus.ports",
+        "hir.bus.ports",
         ArrayAttr::get(context, StringAttr::get(context, "send"))));
     attrs.push_back(helper::getDictionaryAttr(
-        context, "hir.bus.ports",
+        "hir.bus.ports",
         ArrayAttr::get(context, StringAttr::get(context, "recv"))));
   }
   if (helper::isMemrefWrPort(port)) {
     attrs.push_back(helper::getDictionaryAttr(
-        context, "hir.bus.ports",
+        "hir.bus.ports",
         ArrayAttr::get(context, StringAttr::get(context, "send"))));
     attrs.push_back(helper::getDictionaryAttr(
-        context, "hir.bus.ports",
+        "hir.bus.ports",
         ArrayAttr::get(context, StringAttr::get(context, "send"))));
   }
 }

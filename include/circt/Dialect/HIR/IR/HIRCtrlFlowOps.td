@@ -1,3 +1,9 @@
+include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/Interfaces/LoopLikeInterface.td"
+include "HIRDialect.td"
+include "HIRTypes.td"
+include "HIROpInterfaces.td"
+
 def ForOp : HIR_Op<"for", [SingleBlock, RecursiveSideEffects,
     DeclareOpInterfaceMethods<LoopLikeOpInterface>,DeclareOpInterfaceMethods<RegionOp>,DeclareOpInterfaceMethods<ScheduledOp>]> {
        let summary = "for operation";

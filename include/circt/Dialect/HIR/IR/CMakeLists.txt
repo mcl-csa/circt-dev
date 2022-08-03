@@ -1,5 +1,5 @@
 add_circt_dialect(HIR hir)
-add_circt_doc(HIR -gen-op-doc HIR HIR/)
+add_circt_dialect_doc(HIR hir)
 set(LLVM_TARGET_DEFINITIONS HIR.td)
 
 mlir_tablegen(HIREnums.h.inc -gen-enum-decls)
