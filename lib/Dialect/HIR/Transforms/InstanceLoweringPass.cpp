@@ -24,11 +24,12 @@ LogicalResult InstanceLoweringPass::visitOp(InstanceOp op) {
 }
 
 void InstanceLoweringPass::runOnOperation() {
-
-  getOperation().walk([](Operation *operation) {
+  getOperation().walk([this](Operation *operation) {
     if (auto op = dyn_cast<InstanceOp>(operation)) {
+      if (failed(visitOp(op)))
+        return WalkResult::interrupt();
     }
-    WalkResult::advance();
+    return WalkResult::advance();
   });
 }
 
