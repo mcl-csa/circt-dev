@@ -6,23 +6,6 @@ include "HIRDialect.td"
 include "HIROpInterfaces.td"
 include "HIRTypes.td"
 
-
-def ReturnOp : HIR_Op<"return", [ParentOneOf<["FuncOp","FuncExternOp"]>, Terminator]> {
-
-  let summary = "Return from function";
-  let description = [{
-    This op returns the output of the function.
-    This instruction must be the last instruction in the function.
-      ```mlir hir.return (%x, %y): (i32, !hir.const<i1>)```
-  }];
-
-  let arguments = (ins Variadic<AnyType>:$operands);
-  let builders = [OpBuilder<(ins),[{
-    build($_builder,$_state,SmallVector<Value>());
-  }]>];
-  let assemblyFormat = [{ attr-dict (`(` $operands^ `)` `:` `(` type($operands) `)`)? }];
-}
-
 def FuncOp : HIR_Op<"func", 
   [Symbol, SingleBlockImplicitTerminator<"ReturnOp">, FunctionOpInterface, FuncLike,
   IsolatedFromAbove, CallableOpInterface, HasParent<"mlir::ModuleOp">,DeclareOpInterfaceMethods<RegionOp>]> {
@@ -80,6 +63,23 @@ def FuncOp : HIR_Op<"func",
   }];
   let hasVerifier = 1;
 }
+
+def ReturnOp : HIR_Op<"return", [ParentOneOf<["FuncOp","FuncExternOp"]>, Terminator]> {
+
+  let summary = "Return from function";
+  let description = [{
+    This op returns the output of the function.
+    This instruction must be the last instruction in the function.
+      ```mlir hir.return (%x, %y): (i32, !hir.const<i1>)```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let builders = [OpBuilder<(ins),[{
+    build($_builder,$_state,SmallVector<Value>());
+  }]>];
+  let assemblyFormat = [{ attr-dict (`(` $operands^ `)` `:` `(` type($operands) `)`)? }];
+}
+
 
 def FuncExternOp : HIR_Op<"func.extern", 
 [Symbol, SingleBlockImplicitTerminator<"ReturnOp">, FuncLike, HasParent<"mlir::ModuleOp">]> {

@@ -45,6 +45,18 @@ FunctionType FuncType::getFunctionType() {
   return FunctionType::get(getContext(), functionArgTypes, getResultTypes());
 }
 
+unsigned int FuncType::getNumInputs() { return getInputTypes().size(); }
+unsigned int FuncType::getNumResults() { return getResultTypes().size(); }
+
+Type FuncType::getInputType(unsigned int i) { return getInputTypes()[i]; }
+DictionaryAttr FuncType::getInputAttr(unsigned int i) {
+  return getInputAttrs()[i];
+}
+Type FuncType::getResultType(unsigned int i) { return getResultTypes()[i]; }
+DictionaryAttr FuncType::getResultAttr(unsigned int i) {
+  return getResultAttrs()[i];
+}
+
 size_t BusTensorType::getNumElements() {
   size_t numElements = 1;
   for (auto dim : getShape())

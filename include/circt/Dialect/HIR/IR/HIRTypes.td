@@ -52,6 +52,12 @@ def HIR_FuncType : HIRDialect_Type<"Func", "func"> {
   let genVerifyDecl = 1;
   let extraClassDeclaration = [{
     FunctionType getFunctionType();
+    unsigned int getNumInputs();
+    unsigned int getNumResults();
+    Type getInputType(unsigned int);
+    DictionaryAttr getInputAttr(unsigned int);
+    Type getResultType(unsigned int);
+    DictionaryAttr getResultAttr(unsigned int);
   }];
 }
 

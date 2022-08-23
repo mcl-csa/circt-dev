@@ -6,6 +6,12 @@
 #bram_wr = {wr_latency=1}
 #bram_rd = {rd_latency=1}
 
+
+hir.func @test1 at %t(){
+#bram_rd = {rd_latency=1}
+#bram_wr = {wr_latency=1}
+  %a = hir.alloca "bram"  : !hir.memref<(bank 2)x(bank 3)x2x4xi8> ports [#bram_rd,#bram_wr]
+}
 //hir.func @test1 at %t(
 //%a :!hir.memref<2x2x(bank 2)x(bank 2)xi48> ports [#rd,#wr],
 //%b : i32
