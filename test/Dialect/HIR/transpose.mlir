@@ -1,4 +1,3 @@
-// RUN: circt-opt %s
 #bram_r = {"rd_latency"=1}
 #bram_w = {"wr_latency"=1}
 
@@ -22,5 +21,5 @@ hir.func @transpose_hir at %t(
       hir.next_iter at %tf + 1
     }
     hir.return
-}
+}{argNames=["Ai","Co","t"]}
 
