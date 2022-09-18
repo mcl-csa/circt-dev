@@ -6,10 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Conversion/AffineToHIR.h"
 #include "../PassDetail.h"
 #include "AffineToHIRUtils.h"
 #include "SchedulingAnalysis.h"
-#include "circt/Conversion/AffineToHIR.h"
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
@@ -247,8 +247,6 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::FuncOp op) {
 
   auto funcTy = FuncType::get(builder.getContext(), inputTypes, inputAttrs,
                               resultTypes, resultAttrs);
-  std::string name = (op.getSymName() + "_hir").str();
-  llvm::StringRef nameRef(name);
 
   builder.setInsertionPoint(op);
   auto argNamesAttr = op->getAttrOfType<ArrayAttr>("argNames");
@@ -269,9 +267,9 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::FuncOp op) {
     argNames.push_back(name);
   }
   argNames.push_back(builder.getStringAttr("t"));
-  auto funcOp = builder.create<hir::FuncOp>(op->getLoc(), nameRef, funcTy,
-                                            builder.getArrayAttr(argNames),
-                                            resultNamesAttr);
+  auto funcOp = builder.create<hir::FuncOp>(
+      op->getLoc(), op.getSymName(), funcTy, builder.getArrayAttr(argNames),
+      resultNamesAttr);
 
   // Map function arguments to hir.
   auto mlirFuncOpArguments = op.getBody().front().getArguments();
