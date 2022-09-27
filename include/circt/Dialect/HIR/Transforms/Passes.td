@@ -2,6 +2,13 @@
 #define CIRCT_DIALECT_HIR_TRANSFORMS_PASSES
 include "mlir/Pass/PassBase.td"
 
+def FuseHWInst : Pass<"fuse-hw-inst", "hw::HWModuleOp"> {
+  let summary = ".";
+  let description = [{This pass fuses hw instances.}];
+
+  let constructor = "circt::hir::createFuseHWInstPass()";
+  let dependentDialects = ["hw::HWDialect","comb::CombDialect"];
+}
 def OptBitWidth : Pass<"hir-opt-bitwidth", "hir::FuncOp"> {
   let summary = ".";
   let description = [{This pass reduces bitwidth of various ops.}];
@@ -23,15 +30,6 @@ def SimplifyCtrl : Pass<"hir-simplify-ctrl", "hir::FuncOp"> {
 
   let constructor = "circt::hir::createSimplifyCtrlPass()";
   let dependentDialects = ["circt::hw::HWDialect","circt::comb::CombDialect"];
-}
-
-def InstanceLowering : Pass<"hir-lower-instance", "hir::FuncOp"> {
-  let summary = "Lower hir.instance and hir.call_instance ops.";
-  let description = [{This pass lowers hir.instance and hir.call_instance ops.}];
-
-  let constructor = "circt::hir::createInstanceLoweringPass()";
-  let dependentDialects = ["mlir::arith::ArithmeticDialect",
-  "circt::hw::HWDialect","circt::comb::CombDialect","hir::HIRDialect"];
 }
 
 def MemrefLowering : Pass<"hir-lower-memref", "mlir::ModuleOp"> {

@@ -3,9 +3,9 @@
 // This pass converts HIR to HW, Comb and SV dialect.
 //===----------------------------------------------------------------------===//
 
+#include "circt/Conversion/HIRToHW.h"
 #include "../PassDetail.h"
 #include "HIRToHWUtils.h"
-#include "circt/Conversion/HIRToHW.h"
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -206,6 +206,7 @@ LogicalResult HIRToHWPass::visitOp(hir::CallOp op) {
   instanceOp = builder->create<hw::InstanceOp>(
       op.getLoc(), calleeHWModule, instanceName, hwInputs,
       getHWParams(op->getAttr("params")), StringAttr());
+  copyHIRAttrs(op, instanceOp);
 
   // Map callop input send buses to the results of the instance op and replace
   // all prev uses of the placeholder hw ssa vars corresponding to these send

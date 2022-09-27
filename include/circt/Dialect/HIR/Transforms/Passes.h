@@ -9,13 +9,14 @@
 #define CIRCT_DIALECT_HIR_TRANSFORMS_PASSES_H
 
 #include "circt/Dialect/HIR/IR/HIR.h"
+#include "circt/Dialect/HW/HWOps.h"
 #include "circt/Support/LLVM.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include <memory>
 namespace circt {
 namespace hir {
 
-std::unique_ptr<OperationPass<hir::FuncOp>> createInstanceLoweringPass();
+std::unique_ptr<OperationPass<hw::HWModuleOp>> createFuseHWInstPass();
 std::unique_ptr<OperationPass<hir::FuncOp>> createOptBitWidthPass();
 std::unique_ptr<OperationPass<hir::FuncOp>> createOptTimePass();
 std::unique_ptr<OperationPass<hir::FuncOp>> createSimplifyCtrlPass();

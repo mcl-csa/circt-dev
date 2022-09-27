@@ -123,6 +123,12 @@ FuncToHWModulePortMap getHWModulePortMap(OpBuilder &builder,
   return portMap;
 }
 
+void copyHIRAttrs(hir::CallOp srcOp, hw::InstanceOp destOp) {
+  if (auto attr = srcOp->getAttr("hir_attrs")) {
+    destOp->setAttr("hir_attrs", attr);
+  }
+}
+
 Operation *
 getConstantXArray(OpBuilder *builder, Type hirTy,
                   DenseMap<Value, SmallVector<Value>> &mapArrayToElements) {
