@@ -20,7 +20,7 @@ Value getConstantX(OpBuilder &builder, int width) {
 class FusionAnalysis {
 public:
   FusionAnalysis(hw::HWModuleOp);
-  llvm::DenseMap<int, ArrayRef<hw::InstanceOp>> &getFusionGroups();
+  llvm::DenseMap<int, llvm::SmallVector<hw::InstanceOp, 2>> &getFusionGroups();
   int64_t getSelectArgNum(int group);
 
 private:
@@ -48,6 +48,11 @@ FusionAnalysis::FusionAnalysis(hw::HWModuleOp op) {
     }
     return WalkResult::advance();
   });
+}
+
+llvm::DenseMap<int, SmallVector<hw::InstanceOp, 2>> &
+FusionAnalysis::getFusionGroups() {
+  return this->fusionGroups;
 }
 
 int64_t FusionAnalysis::getSelectArgNum(int group) {
@@ -89,10 +94,10 @@ void FuseHWInstPass::runOnOperation() {
             instanceOp.getInputs()[i], inputs[i]);
       }
     }
-    builder.create<hw::InstanceOp>(
-        builder.getUnknownLoc(), firstInstanceOp.getModuleName(),
-        firstInstanceOp.getInstanceName(), inputs,
-        firstInstanceOp.getParameters(), StringAttr());
+    // builder.create<hw::InstanceOp>(
+    //     builder.getUnknownLoc(), firstInstanceOp.getModuleName(),
+    //     firstInstanceOp.getInstanceName(), inputs,
+    //     firstInstanceOp.getParameters(), StringAttr());
   }
 }
 
