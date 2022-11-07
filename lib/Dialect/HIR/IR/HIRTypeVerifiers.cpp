@@ -9,12 +9,12 @@ LogicalResult
 verifyDelayAttribute(mlir::function_ref<InFlightDiagnostic()> emitError,
                      DictionaryAttr attrDict) {
   if (!attrDict)
-    return failure();
+    return emitError() << "Could not find hir.delay attr";
   auto delayNameAndAttr = attrDict.getNamed("hir.delay");
   if (!delayNameAndAttr.hasValue())
-    return failure();
+    return emitError() << "Could not find hir.delay attr";
   if (!delayNameAndAttr->getValue().dyn_cast<IntegerAttr>())
-    return failure();
+    return emitError() << "hir.delay attr must be IntegerAttr";
   return success();
 }
 
@@ -102,7 +102,7 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
     if (helper::isBuiltinSizedType(resultTypes[i])) {
       if (failed(verifyDelayAttribute(emitError, resultAttrs[i])))
         return emitError() << "Expected hir.delay attribute to be an "
-                              "IntegerAttr for result arg"
+                              "IntegerAttr for result "
                            << std::to_string(i) << ".";
     } else if (resultTypes[i].dyn_cast<hir::TimeType>()) {
       return success();

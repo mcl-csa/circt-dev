@@ -16,6 +16,24 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
+// HIRPragma
+//===----------------------------------------------------------------------===//
+
+def HIRPragma : Pass<"hir-pragma","mlir::ModuleOp"> {
+  let summary = "Convert HLS pragma attrs from polygeist to hir specific attributes.";
+  let constructor = "circt::createHIRPragmaPass()";
+  let dependentDialects = [
+    "circt::hir::HIRDialect",
+  ];
+  let options = [
+    Option<"topLevelFuncName", "function", "std::string",
+            "", "Top level function to convert to hir dialect.">
+   ];
+
+}
+
+
+//===----------------------------------------------------------------------===//
 // AffineToHIR
 //===----------------------------------------------------------------------===//
 

@@ -193,10 +193,12 @@ void hir::FuncExternOp::build(OpBuilder &builder, OperationState &result,
   auto functionTy = funcTy.getFunctionType();
   FuncExternOp::build(builder, result, functionTy, symName, funcTy, argNames,
                       resultNames);
-  auto &region = result.regions[0];
-  auto *bb = new Block();
+  OpBuilder::InsertionGuard guard(builder);
+  auto *bb = builder.createBlock(&*result.regions[0]);
   bb->addArguments(functionTy.getInputs(),
                    SmallVector<Location>(functionTy.getNumInputs(),
                                          builder.getUnknownLoc()));
-  region->push_back(bb);
+
+  builder.create<hir::ReturnOp>(builder.getUnknownLoc(),
+                                SmallVector<Value>({}));
 }

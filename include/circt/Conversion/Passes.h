@@ -22,6 +22,7 @@
 #include "circt/Conversion/ExportVerilog.h"
 #include "circt/Conversion/FIRRTLToHW.h"
 #include "circt/Conversion/FSMToSV.h"
+#include "circt/Conversion/HIRPragma.h"
 #include "circt/Conversion/HIRToHW.h"
 #include "circt/Conversion/HWArithToHW.h"
 #include "circt/Conversion/HWToLLHD.h"

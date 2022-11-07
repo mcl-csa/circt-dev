@@ -3,6 +3,7 @@ add_circt_library(CIRCTAffineToHIR
   AffineToHIRUtils.cpp
   SchedulingAnalysis.cpp 
   SchedulingUtils.cpp
+  HIRPragma.cpp
   
 
   DEPENDS

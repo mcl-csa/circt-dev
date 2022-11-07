@@ -20,9 +20,13 @@
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
 #include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/Support/LLVM.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
@@ -61,6 +65,7 @@ private:
   LogicalResult visitOp(mlir::AffineYieldOp);
   LogicalResult visitOp(mlir::arith::ConstantOp);
   LogicalResult visitOp(mlir::memref::AllocaOp);
+  LogicalResult visitOp(mlir::func::CallOp);
   LogicalResult visitFFIOp(Operation *);
 
 private:
@@ -266,7 +271,15 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::FuncOp op) {
   for (auto name : argNamesAttr) {
     argNames.push_back(name);
   }
+
   argNames.push_back(builder.getStringAttr("t"));
+  if (op.isDeclaration()) {
+    builder.create<hir::FuncExternOp>(op->getLoc(), op.getSymName(), funcTy,
+                                      builder.getArrayAttr(argNames),
+                                      resultNamesAttr);
+    return success();
+  }
+
   auto funcOp = builder.create<hir::FuncOp>(
       op->getLoc(), op.getSymName(), funcTy, builder.getArrayAttr(argNames),
       resultNamesAttr);
@@ -494,6 +507,42 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::memref::AllocaOp op) {
   return success();
 }
 
+LogicalResult AffineToHIRImpl::visitOp(mlir::func::CallOp op) {
+  auto hirFuncExternOp = dyn_cast_or_null<hir::FuncExternOp>(
+      op->getParentOfType<mlir::ModuleOp>().lookupSymbol(op.getCalleeAttr()));
+  assert(hirFuncExternOp);
+  Value tRegion = builder.getInsertionBlock()->getArguments().back();
+  auto offset = schedulingAnalysis->getTimeOffset(op);
+  auto offsetAttr = builder.getI64IntegerAttr(offset);
+  auto hirOperands = valueConverter.getBlockLocalValues(
+      builder, op->getOperands(), tRegion, offset);
+
+  SmallVector<Value> operands;
+  for (auto hirOperand : hirOperands) {
+    operands.push_back(hirOperand.getValue());
+  }
+  auto callOp = builder.create<hir::CallOp>(
+      op->getLoc(), getHIRValueTypes(op->getResultTypes()), op.getCalleeAttr(),
+      builder.getStringAttr(op.getCalleeAttr().getValue()),
+      hirFuncExternOp.funcTyAttr(), operands, tRegion, offsetAttr);
+  assert(callOp->getNumResults() == op->getNumResults());
+  auto resultDelays = op->getAttrOfType<ArrayAttr>("result_delays");
+  if (!resultDelays && callOp->getNumResults() > 0) {
+    return op->emitError("Could not find result_delays");
+  }
+  if (resultDelays.size() != op->getNumResults()) {
+    return op->emitError("Number of result delays is wrong.");
+  }
+  for (size_t i = 0; i < callOp->getNumResults(); i++) {
+    auto resultDelay = resultDelays[i].dyn_cast<IntegerAttr>().getInt();
+    valueConverter.mapValueToHIRValue(
+        op->getResult(i),
+        HIRValue(callOp->getResult(i), tRegion, offset + resultDelay),
+        callOp->getBlock());
+  }
+  return success();
+}
+
 LogicalResult AffineToHIRImpl::visitFFIOp(Operation *operation) {
   auto hirFuncAttr =
       operation->getAttrOfType<mlir::FlatSymbolRefAttr>("hir_function");
@@ -558,6 +607,8 @@ LogicalResult AffineToHIRImpl::visitOperation(Operation *operation) {
     return visitOp(op);
   if (auto op = dyn_cast<mlir::memref::AllocaOp>(operation))
     return visitOp(op);
+  if (auto op = dyn_cast<mlir::func::CallOp>(operation))
+    return visitOp(op);
   if (isa<arith::ArithmeticDialect>(operation->getDialect()))
     return visitFFIOp(operation);
   if (isa<mlir::func::CallOp>(operation))
@@ -567,11 +618,13 @@ LogicalResult AffineToHIRImpl::visitOperation(Operation *operation) {
 
 void AffineToHIRImpl::runOnOperation() {
   std::string logFile = "/dev/null";
-  schedulingAnalysis = std::make_unique<SchedulingAnalysis>(
-      SchedulingAnalysis(mlirFuncOp, logFile));
-  if (!schedulingAnalysis->hasSolution()) {
-    mlirFuncOp->emitError("Failed to find a schedule.");
-    return;
+  if (!mlirFuncOp.isDeclaration()) {
+    schedulingAnalysis = std::make_unique<SchedulingAnalysis>(
+        SchedulingAnalysis(mlirFuncOp, logFile));
+    if (!schedulingAnalysis->hasSolution()) {
+      mlirFuncOp->emitError("Failed to find a schedule.");
+      return;
+    }
   }
   mlirFuncOp.walk<WalkOrder::PreOrder>([this](Operation *operation) {
     if (failed(visitOperation(operation))) {
@@ -587,8 +640,19 @@ void AffineToHIRImpl::runOnOperation() {
 //-----------------------------------------------------------------------------
 void AffineToHIR::runOnOperation() {
   getOperation()->walk([](Operation *operation) {
+    if (auto funcOp = dyn_cast<mlir::func::FuncOp>(operation))
+      if (funcOp->getAttr("hwAccel") && funcOp.isDeclaration()) {
+        AffineToHIRImpl impl(funcOp);
+        impl.runOnOperation();
+        funcOp->erase();
+      }
+
+    return WalkResult::advance();
+  });
+
+  getOperation()->walk([](Operation *operation) {
     if (auto funcOp = dyn_cast<mlir::func::FuncOp>(operation)) {
-      if (funcOp->getAttrOfType<mlir::UnitAttr>("hwAccel")) {
+      if (funcOp->getAttr("hwAccel")) {
         AffineToHIRImpl impl(funcOp);
         impl.runOnOperation();
       }
