@@ -268,6 +268,21 @@ LogicalResult HIRPragma::visitOp(mlir::memref::AllocaOp op) {
   if (!newAttr)
     return failure();
   op->setAttrs(*newAttr);
+  Optional<mlir::AffineLoadOp> loadOp;
+  Optional<mlir::AffineStoreOp> storeOp;
+  for (auto *user : op.getMemref().getUsers()) {
+    if (auto u = dyn_cast<mlir::AffineLoadOp>(user)) {
+      if (loadOp && loadOp->getIndices() != u.getIndices())
+        return op.emitError("Only one affine.load is supported.");
+      loadOp = u;
+    } else if (auto u = dyn_cast<mlir::AffineStoreOp>(user)) {
+      if (storeOp && storeOp->getIndices() != u.getIndices())
+        return op.emitError("Only one affine.store is supported.");
+      storeOp = u;
+    } else
+      return user->emitError(
+          "Only affine.load and affine.store are supported.");
+  }
   return success();
 }
 
@@ -327,6 +342,9 @@ LogicalResult HIRPragma::visitOp(mlir::AffineLoadOp op) {
 
 LogicalResult HIRPragma::visitOp(mlir::func::CallOp op) {
   auto *calleeOp = getOperation().lookupSymbol(op.getCalleeAttr());
+  if (!calleeOp)
+    return op->emitError("Could not find callee for this call op.");
+
   SmallVector<Attribute> resultDelays;
   for (auto resAttr : calleeOp->getAttrOfType<ArrayAttr>("res_attrs"))
     resultDelays.push_back(

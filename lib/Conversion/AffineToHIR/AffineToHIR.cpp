@@ -45,8 +45,8 @@ struct AffineToHIR : public AffineToHIRBase<AffineToHIR> {
 
 class AffineToHIRImpl {
 public:
-  AffineToHIRImpl(mlir::func::FuncOp funcOp)
-      : mlirFuncOp(funcOp), builder(funcOp), blkArgManager(funcOp) {}
+  AffineToHIRImpl(mlir::func::FuncOp funcOp, bool dbg)
+      : mlirFuncOp(funcOp), builder(funcOp), blkArgManager(funcOp), dbg(dbg) {}
   void runOnOperation();
 
 private:
@@ -76,6 +76,7 @@ private:
   ValueConverter valueConverter;
   std::stack<OpBuilder::InsertionGuard> insertionGuards;
   llvm::DenseMap<std::pair<Value, Region *>, Value> mapValueToRegionArg;
+  bool dbg;
 };
 
 } // namespace
@@ -632,6 +633,9 @@ LogicalResult AffineToHIRImpl::visitOperation(Operation *operation) {
 
 void AffineToHIRImpl::runOnOperation() {
   std::string logFile = "/dev/null";
+  if (this->dbg)
+    logFile = "/dev/stdout";
+
   if (!mlirFuncOp.isDeclaration()) {
     schedulingAnalysis = std::make_unique<SchedulingAnalysis>(
         SchedulingAnalysis(mlirFuncOp, logFile));
@@ -653,10 +657,10 @@ void AffineToHIRImpl::runOnOperation() {
 // AffineToHIR methods.
 //-----------------------------------------------------------------------------
 void AffineToHIR::runOnOperation() {
-  getOperation()->walk([](Operation *operation) {
+  getOperation()->walk([this](Operation *operation) {
     if (auto funcOp = dyn_cast<mlir::func::FuncOp>(operation))
       if (funcOp->getAttr("hwAccel") && funcOp.isDeclaration()) {
-        AffineToHIRImpl impl(funcOp);
+        AffineToHIRImpl impl(funcOp, this->dbg);
         impl.runOnOperation();
         funcOp->erase();
       }
@@ -664,10 +668,10 @@ void AffineToHIR::runOnOperation() {
     return WalkResult::advance();
   });
 
-  getOperation()->walk([](Operation *operation) {
+  getOperation()->walk([this](Operation *operation) {
     if (auto funcOp = dyn_cast<mlir::func::FuncOp>(operation)) {
       if (funcOp->getAttr("hwAccel")) {
-        AffineToHIRImpl impl(funcOp);
+        AffineToHIRImpl impl(funcOp, this->dbg);
         impl.runOnOperation();
       }
       funcOp->erase();

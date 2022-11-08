@@ -49,6 +49,9 @@ def AffineToHIR : Pass<"affine-to-hir","mlir::ModuleOp"> {
     "circt::hw::HWDialect",
     "circt::comb::CombDialect"
   ];
+  let options = [
+    Option<"dbg", "dbg", "bool","", "Enable debug print to stdout.">
+   ];
 }
 
 //===----------------------------------------------------------------------===//

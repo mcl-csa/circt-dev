@@ -102,8 +102,8 @@ private:
   SmallVector<Value> parentLoopIVs;
   Operation *operation;
   int staticPos; // Represents the position of this op in the code. Used to
-                 // figure out if one op occurs before another in the static
-                 // order & to uniquely identify the static op.
+  // figure out if one op occurs before another in the static
+  // order & to uniquely identify the static op.
 };
 
 /// This class solves the following minimization problem:

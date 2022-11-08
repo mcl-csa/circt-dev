@@ -347,7 +347,8 @@ void MemoryDependenceILPHandler::addILPColumns() {
   for (size_t i = 0; i < toInfo.getParentLoops().size(); i++) {
     auto affineForOp = toInfo.getParentLoops()[i];
     addColumnVar(GLP_DB, affineForOp.getConstantLowerBound(),
-                 affineForOp.getConstantUpperBound(), getLoopII(affineForOp));
+                 affineForOp.getConstantUpperBound() - 1,
+                 getLoopII(affineForOp));
   }
 
   // Define the ILP column equations corresponding to each parent loop IV of
@@ -355,7 +356,8 @@ void MemoryDependenceILPHandler::addILPColumns() {
   for (size_t j = 0; j < fromInfo.getParentLoops().size(); j++) {
     auto affineForOp = fromInfo.getParentLoops()[j];
     addColumnVar(GLP_DB, affineForOp.getConstantLowerBound(),
-                 affineForOp.getConstantUpperBound(), -getLoopII(affineForOp));
+                 affineForOp.getConstantUpperBound() - 1,
+                 -getLoopII(affineForOp));
   }
 }
 
@@ -398,6 +400,9 @@ void MemoryDependenceILPHandler::addMemoryConstraintILPRows() {
 // If the staticPos of the dest > src, then the common loop ivs of dest must be
 // >= the src else it must be >.
 void MemoryDependenceILPHandler::addHappensBeforeConstraintRow() {
+  if (toInfo.getOperation() == fromInfo.getOperation())
+    assert(toInfo.getStaticPosition() == fromInfo.getStaticPosition());
+
   int staticDist = toInfo.getStaticPosition() - fromInfo.getStaticPosition();
   SmallVector<int> commonIVCoeffs;
   auto destIVs = toInfo.getParentLoopIVs();
@@ -430,18 +435,14 @@ void MemoryDependenceILPHandler::addHappensBeforeConstraintRow() {
               1);
   }
 
-  // If there are no common loop and source and dest are same op then there is
-  // no extra happens before constraint.
-  if (commonIVCoeffs.size() == 0 && staticDist == 0)
-    return;
-
   SmallVector<int> rowCoeffs;
   rowCoeffs.append(destIVs.size() + srcIVs.size(), 0);
   for (size_t i = 0; i < commonIVCoeffs.size(); i++) {
     rowCoeffs[destPos + i] = commonIVCoeffs[i];
     rowCoeffs[destIVs.size() + srcPos + i] = -commonIVCoeffs[i];
   }
-
+  // FIXME: if staticDist == 0 then the delay should be equal to store op delay
+  // not just one.
   auto lb = staticDist > 0 ? 0 : 1;
 
   addRow(rowCoeffs, GLP_LO, lb, lb);
