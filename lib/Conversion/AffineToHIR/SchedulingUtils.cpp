@@ -125,15 +125,18 @@ static Operation *getTopLevelDependentOp(Operation *commonParentOp,
   return actualDependentOp;
 }
 
-void populateSSADependences(mlir::func::FuncOp funcOp,
-                            SmallVector<SSADependence> &ssaDependences) {
+LogicalResult
+populateSSADependences(mlir::func::FuncOp funcOp,
+                       SmallVector<SSADependence> &ssaDependences) {
   funcOp.walk([&ssaDependences](Operation *operation) {
     if (isa<arith::ConstantOp, mlir::memref::AllocaOp>(operation))
       return WalkResult::advance();
     for (OpResult result : operation->getResults()) {
       assert(!result.getType().isa<MemRefType>());
       auto delay = getResultDelay(result);
-      assert(delay.hasValue());
+      if (!delay.hasValue()) {
+        operation->emitError("Could not calculate result delay.");
+      }
       for (auto *user : result.getUsers()) {
         // FIXME: getTopLevelDependentOp should not be required.
         auto *dependentOp =
@@ -154,6 +157,7 @@ void populateSSADependences(mlir::func::FuncOp funcOp,
     }
     return WalkResult::advance();
   });
+  return success();
 }
 
 //-----------------------------------------------------------------------------

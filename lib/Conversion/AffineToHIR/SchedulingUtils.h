@@ -57,8 +57,8 @@ void populateMemrefToPortsAttrMapping(
     mlir::func::FuncOp funcOp,
     llvm::DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr);
 
-void populateSSADependences(mlir::func::FuncOp funcOp,
-                            SmallVector<SSADependence> &SSADependence);
+LogicalResult populateSSADependences(mlir::func::FuncOp funcOp,
+                                     SmallVector<SSADependence> &SSADependence);
 
 /// This class is a general base class for all ILP problems.
 class ILPHandler {

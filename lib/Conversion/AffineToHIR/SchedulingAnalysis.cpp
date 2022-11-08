@@ -41,7 +41,8 @@ SchedulingAnalysis::SchedulingAnalysis(Operation *operation,
   initOperationInfo();
   populateMemrefToPortsAttrMapping(funcOp, mapMemrefToPortsAttr);
   initSlackAndDelayForMemoryDependencies(mapMemrefToPortsAttr);
-  populateSSADependences(funcOp, ssaDependences);
+  if (failed(populateSSADependences(funcOp, ssaDependences)))
+    return;
   auto scheduler = std::make_unique<SchedulingILPHandler>(
       SchedulingILPHandler(operations, mapMemoryDependenceToSlackAndDelay,
                            ssaDependences, mapMemrefToPortsAttr, logFile));

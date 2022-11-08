@@ -121,6 +121,15 @@ Value emitI64Expr(OpBuilder &builder, ArrayRef<HIRValue> i64Values,
 SmallVector<Value> AffineToHIRImpl::getFlattenedHIRIndices(
     OperandRange indices, AffineMap affineMap, hir::MemrefType memrefTy,
     Value timeVar, int64_t offset) {
+
+  // For memref<i32> like type.
+  if (indices.size() == 0) {
+    assert(memrefTy.getNumBanks() * memrefTy.getNumElementsPerBank() == 1);
+    return {builder
+                .create<mlir::arith::ConstantOp>(builder.getUnknownLoc(),
+                                                 builder.getIndexAttr(0))
+                .getResult()};
+  }
   SmallVector<Value> hirIndices;
   auto hirValues =
       valueConverter.getBlockLocalValues(builder, indices, timeVar, offset);
@@ -188,9 +197,14 @@ SmallVector<Type> getHIRValueTypes(TypeRange types) {
 Type getHIRType(Type ty, DictionaryAttr attr) {
   if (auto memrefTy = ty.dyn_cast<mlir::MemRefType>()) {
     if (memrefTy.getNumElements() == 1) {
-      assert(memrefTy.getShape().size() == 1);
+      // assert(memrefTy.getShape().size() == 1);
       // If the memref is of size one then it must be a banked dimension so that
       // we can index it.
+      if (memrefTy.getShape().size() == 0)
+        return hir::MemrefType::get(ty.getContext(), {1},
+                                    getHIRValueType(memrefTy.getElementType()),
+                                    SmallVector<DimKind>({DimKind::BANK}));
+
       return hir::MemrefType::get(ty.getContext(), memrefTy.getShape(),
                                   getHIRValueType(memrefTy.getElementType()),
                                   SmallVector<DimKind>({DimKind::BANK}));

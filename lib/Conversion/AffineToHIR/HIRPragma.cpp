@@ -21,6 +21,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -45,6 +46,7 @@ private:
   LogicalResult visitOp(mlir::AffineLoadOp);
   LogicalResult visitOp(mlir::func::CallOp);
   LogicalResult visitOp(mlir::arith::NegFOp);
+  LogicalResult visitOp(mlir::LLVM::UndefOp);
 
 private:
   llvm::DenseSet<mlir::func::FuncOp> setOfHWFunctions;
@@ -95,6 +97,9 @@ void HIRPragma::runOnOperation() {
           if (failed(visitOp(op)))
             return WalkResult::interrupt();
         } else if (auto op = dyn_cast<mlir::arith::NegFOp>(operation)) {
+          if (failed(visitOp(op)))
+            return WalkResult::interrupt();
+        } else if (auto op = dyn_cast<mlir::LLVM::UndefOp>(operation)) {
           if (failed(visitOp(op)))
             return WalkResult::interrupt();
         }
@@ -358,6 +363,16 @@ LogicalResult HIRPragma::visitOp(mlir::arith::NegFOp op) {
   return success();
 }
 
+LogicalResult HIRPragma::visitOp(mlir::LLVM::UndefOp op) {
+  for (auto *user : op.getResult().getUsers()) {
+    if (!isa<mlir::AffineStoreOp>(user))
+      return user->emitError(
+          "Only affine.store op uses for llvm.mlir.undef is allowed.");
+    user->erase();
+  }
+  op->erase();
+  return success();
+}
 //-----------------------------------------------------------------------------
 std::unique_ptr<mlir::Pass> circt::createHIRPragmaPass() {
   return std::make_unique<HIRPragma>();
