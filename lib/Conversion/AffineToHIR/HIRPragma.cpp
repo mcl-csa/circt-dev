@@ -47,37 +47,49 @@ private:
   LogicalResult visitOp(mlir::func::CallOp);
   LogicalResult visitOp(mlir::arith::NegFOp);
   LogicalResult visitOp(mlir::LLVM::UndefOp);
+  void safelyEraseOps();
 
 private:
-  llvm::DenseSet<mlir::func::FuncOp> setOfHWFunctions;
+  SmallVector<Operation *> toErase;
 };
 
 } // namespace
+
+void HIRPragma::safelyEraseOps() {
+  llvm::DenseSet<Operation *> erasedOps;
+  for (auto *operation : toErase) {
+    if (erasedOps.contains(operation))
+      continue;
+    assert(operation != getOperation());
+    erasedOps.insert(operation);
+    operation->erase();
+  }
+}
 
 void HIRPragma::runOnOperation() {
   auto moduleOp = getOperation();
   OpBuilder builder(&moduleOp.getBodyRegion());
   moduleOp->setAttrs(builder.getDictionaryAttr(
       builder.getNamedAttr("hir.hls", builder.getUnitAttr())));
-  llvm::DenseSet<Operation *> toErase;
 
   // Hoist all declarations and put the hw functions in a set.
-  moduleOp->walk([this, &builder, &toErase](Operation *operation) {
+  // FIXME: Currently we assume that top level function only calls declarations.
+  // All functions with body are inlined.
+  // We need to process all the child functions in post-order starting from top
+  // level func.
+  moduleOp->walk([this, &builder](Operation *operation) {
     if (auto op = dyn_cast<mlir::func::FuncOp>(operation)) {
       if (op.isDeclaration()) {
         auto newDecl = builder.cloneWithoutRegions(op);
-        this->setOfHWFunctions.insert(newDecl);
-        toErase.insert(op);
+        newDecl->setAttr("hwAccel", builder.getUnitAttr());
+        toErase.push_back(op);
       } else if (op.getName() == this->topLevelFuncName) {
-        this->setOfHWFunctions.insert(op);
+        op->setAttr("hwAccel", builder.getUnitAttr());
       } else {
-        toErase.insert(op);
+        toErase.push_back(op);
       }
     }
   });
-
-  for (auto *op : toErase)
-    op->erase();
 
   auto walkresult =
       moduleOp->walk<mlir::WalkOrder::PreOrder>([this](Operation *operation) {
@@ -105,6 +117,7 @@ void HIRPragma::runOnOperation() {
         }
         return WalkResult::advance();
       });
+  safelyEraseOps();
   if (walkresult.wasInterrupted()) {
     signalPassFailure();
   }
@@ -247,6 +260,8 @@ ArrayAttr newArgOrResultAttrs(Operation *op, ArrayAttr originalAttrs,
 }
 
 LogicalResult HIRPragma::visitOp(mlir::func::FuncOp op) {
+  if (!op->hasAttr("hwAccel"))
+    return success();
   Builder builder(op);
   ArrayAttr newArgAttr = newArgOrResultAttrs(
       op, op->getAttrOfType<ArrayAttr>("arg_attrs"), op.getArgumentTypes());
@@ -256,7 +271,6 @@ LogicalResult HIRPragma::visitOp(mlir::func::FuncOp op) {
       op, op->getAttrOfType<ArrayAttr>("res_attrs"), op.getArgumentTypes());
   if (newResultAttr)
     op->setAttr("res_attrs", newResultAttr);
-  op->setAttr("hwAccel", builder.getUnitAttr());
   return success();
 }
 
@@ -268,21 +282,23 @@ LogicalResult HIRPragma::visitOp(mlir::memref::AllocaOp op) {
   if (!newAttr)
     return failure();
   op->setAttrs(*newAttr);
-  Optional<mlir::AffineLoadOp> loadOp;
-  Optional<mlir::AffineStoreOp> storeOp;
-  for (auto *user : op.getMemref().getUsers()) {
-    if (auto u = dyn_cast<mlir::AffineLoadOp>(user)) {
-      if (loadOp && loadOp->getIndices() != u.getIndices())
-        return op.emitError("Only one affine.load is supported.");
-      loadOp = u;
-    } else if (auto u = dyn_cast<mlir::AffineStoreOp>(user)) {
-      if (storeOp && storeOp->getIndices() != u.getIndices())
-        return op.emitError("Only one affine.store is supported.");
-      storeOp = u;
-    } else
-      return user->emitError(
-          "Only affine.load and affine.store are supported.");
-  }
+
+  // Check that only one load and one store is present.
+  // Optional<mlir::AffineLoadOp> loadOp;
+  // Optional<mlir::AffineStoreOp> storeOp;
+  // for (auto *user : op.getMemref().getUsers()) {
+  //   if (auto u = dyn_cast<mlir::AffineLoadOp>(user)) {
+  //     if (loadOp && loadOp->getIndices() != u.getIndices())
+  //       return op.emitError("Only one affine.load is supported.");
+  //     loadOp = u;
+  //   } else if (auto u = dyn_cast<mlir::AffineStoreOp>(user)) {
+  //     if (storeOp && storeOp->getIndices() != u.getIndices())
+  //       return op.emitError("Only one affine.store is supported.");
+  //     storeOp = u;
+  //   } else
+  //     return user->emitError(
+  //         "Only affine.load and affine.store are supported.");
+  // }
   return success();
 }
 
@@ -377,7 +393,7 @@ LogicalResult HIRPragma::visitOp(mlir::arith::NegFOp op) {
                                                   op->getOperands());
   newOp->setAttr("result_delays", builder.getI64ArrayAttr({0}));
   op->replaceAllUsesWith(newOp);
-  op.erase();
+  toErase.push_back(op);
   return success();
 }
 
@@ -386,9 +402,9 @@ LogicalResult HIRPragma::visitOp(mlir::LLVM::UndefOp op) {
     if (!isa<mlir::AffineStoreOp>(user))
       return user->emitError(
           "Only affine.store op uses for llvm.mlir.undef is allowed.");
-    user->erase();
+    toErase.push_back(user);
   }
-  op->erase();
+  toErase.push_back(op);
   return success();
 }
 //-----------------------------------------------------------------------------

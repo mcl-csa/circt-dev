@@ -35,12 +35,13 @@ private:
 public:
   bool srcIsRegionArg() { return value.getDefiningOp() == NULL; }
   Operation *getSrcOp() {
-    auto op = value.getDefiningOp();
+    auto *op = value.getDefiningOp();
     assert(op);
     return op;
   }
   Operation *getDestOp() { return destOp; }
   int64_t getMinimumDelay() { return delay; }
+  Value getSSAVar() { return value; }
 };
 
 // Helper functions.

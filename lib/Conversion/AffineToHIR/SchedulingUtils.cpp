@@ -2,7 +2,9 @@
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "llvm/Support/FileSystem.h"
 using namespace circt;
 // Local functions.
@@ -147,7 +149,7 @@ populateSSADependences(mlir::func::FuncOp funcOp,
     }
     for (auto &region : operation->getRegions()) {
       for (Value regionArg : region.getArguments()) {
-        if (regionArg.getType().isa<hir::TimeType>())
+        if (regionArg.getType().isa<mlir::MemRefType>())
           continue;
         for (auto *user : regionArg.getUsers()) {
           auto *dependentOp = getTopLevelDependentOp(operation, user);
@@ -373,6 +375,19 @@ void MemoryDependenceILPHandler::addMemoryConstraintILPRows() {
 
   assert(toAffineExprs.size() == numRows);
 
+  // FIXME: Currently we assume simple dual port RAM.
+  // So we handle load-to-load and store-to-store port conflicts by always
+  // assuming data dependence, i.e. treat the memory like a single register.
+  // This means we put sequential ordering on this operations, though, the
+  // actual requirement is just that they should not happen in same cycle.
+  if (isa<mlir::AffineLoadOp>(fromInfo.getOperation()) &&
+      isa<mlir::AffineLoadOp>(toInfo.getOperation()))
+    return;
+  if (isa<mlir::AffineStoreOp>(fromInfo.getOperation()) &&
+      isa<mlir::AffineStoreOp>(toInfo.getOperation()))
+    return;
+
+  // Add constraint for address equivalence.
   for (size_t row = 0; row < numRows; row++) {
     SmallVector<int, 4> rowCoeffVec;
 

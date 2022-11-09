@@ -89,15 +89,25 @@ void SchedulingAnalysis::initSlackAndDelayForMemoryDependencies(
       if (getMemrefFromAffineLoadOrStoreOp(srcOp) !=
           getMemrefFromAffineLoadOrStoreOp(destOp))
         continue;
-      if (isa<AffineLoadOp>(srcOp) && isa<AffineLoadOp>(destOp))
-        continue;
+      // FIXME: Currently we assume load-to-load dependence to avoid port
+      // conflicts. if (isa<AffineLoadOp>(srcOp) && isa<AffineLoadOp>(destOp))
+      //  continue;
       MemoryDependenceILPHandler memoryDependenceILP(
           mapOperationToInfo[srcOp], mapOperationToInfo[destOp], logFile);
       auto dist = memoryDependenceILP.calculateSlack();
+
+      // FIXME: Currently we assume a simple dual port RAM.
+      bool potentialPortConflict =
+          (isa<AffineLoadOp>(srcOp) && isa<AffineLoadOp>(destOp)) ||
+          (isa<AffineStoreOp>(srcOp) && isa<AffineStoreOp>(destOp));
       if (dist) {
+        int minRequiredDelay;
+        minRequiredDelay = getMemOpSafeDelay(srcOp, mapMemrefToPortsAttr);
+        if (potentialPortConflict)
+          minRequiredDelay = std::max(minRequiredDelay, 1);
+
         mapMemoryDependenceToSlackAndDelay[std::make_pair(srcOp, destOp)] =
-            std::make_pair(dist.getValue(),
-                           getMemOpSafeDelay(srcOp, mapMemrefToPortsAttr));
+            std::make_pair(dist.getValue(), minRequiredDelay);
       }
     }
   }
