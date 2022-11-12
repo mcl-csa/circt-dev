@@ -1,6 +1,7 @@
 #include "SchedulingUtils.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
+#include "circt/Dialect/HIR/IR/helper.h"
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -8,6 +9,15 @@
 #include "llvm/Support/FileSystem.h"
 using namespace circt;
 // Local functions.
+llvm::Optional<int>
+getMemrefPortFromAffineLoadOrStoreOpAttr(mlir::Operation *operation) {
+  assert(isa<mlir::AffineLoadOp>(operation) ||
+         isa<mlir::AffineStoreOp>(operation));
+  auto portNumAttr = operation->getAttrOfType<IntegerAttr>("hir.memref_port");
+  if (!portNumAttr)
+    return llvm::None;
+  return portNumAttr.getInt();
+}
 static AffineMap getAffineMapForMemoryAccess(Operation *operation) {
 
   if (auto affineLoadOp = dyn_cast<AffineLoadOp>(operation)) {
@@ -375,16 +385,16 @@ void MemoryDependenceILPHandler::addMemoryConstraintILPRows() {
 
   assert(toAffineExprs.size() == numRows);
 
-  // FIXME: Currently we assume simple dual port RAM.
-  // So we handle load-to-load and store-to-store port conflicts by always
-  // assuming data dependence, i.e. treat the memory like a single register.
-  // This means we put sequential ordering on this operations, though, the
-  // actual requirement is just that they should not happen in same cycle.
-  if (isa<mlir::AffineLoadOp>(fromInfo.getOperation()) &&
-      isa<mlir::AffineLoadOp>(toInfo.getOperation()))
-    return;
-  if (isa<mlir::AffineStoreOp>(fromInfo.getOperation()) &&
-      isa<mlir::AffineStoreOp>(toInfo.getOperation()))
+  // FIXME: Currently we handle port conflicts
+  // by always assuming data dependence, i.e. treat the memory like a single
+  // register. This means we put sequential ordering on this operations, though,
+  // the actual requirement is just that they should not happen in same cycle.
+  auto fromPortNum =
+      getMemrefPortFromAffineLoadOrStoreOpAttr(fromInfo.getOperation());
+  auto toPortNum =
+      getMemrefPortFromAffineLoadOrStoreOpAttr(toInfo.getOperation());
+  if (!fromPortNum.has_value() || !toPortNum.has_value() ||
+      *fromPortNum == *toPortNum)
     return;
 
   // Add constraint for address equivalence.
@@ -603,19 +613,30 @@ SchedulingILPHandler::getPortAssignments() {
       emitError(mem.getLoc()) << "Could not find the ports for this memref.";
       assert(ports);
     }
+    if (auto pNum = operation->getAttrOfType<IntegerAttr>("hir.memref_port")) {
+      int latency = 0;
+      if (isa<AffineLoadOp>(operation)) {
+        latency =
+            helper::getMemrefPortRdLatency(ports[pNum.getInt()]).hasValue();
+      } else {
+        latency =
+            helper::getMemrefPortWrLatency(ports[pNum.getInt()]).getValue();
+      }
+      portAssignments[operation] = std::make_pair(pNum.getInt(), latency);
+      continue;
+    }
+
     for (size_t i = 0; i < ports.size(); i++) {
       auto port = ports[i];
       auto portDict = port.dyn_cast<DictionaryAttr>();
       if (isa<AffineLoadOp>(operation) && helper::isMemrefRdPort(portDict)) {
         auto latency = helper::getMemrefPortRdLatency(portDict);
-        if (!latency.hasValue())
-          operation->emitError("Could not find read_latency.");
+        assert(latency.hasValue());
         portAssignments[operation] = std::make_pair(i, latency.getValue());
       } else if (isa<AffineStoreOp>(operation) &&
                  helper::isMemrefWrPort(portDict)) {
         auto latency = helper::getMemrefPortWrLatency(portDict);
-        if (!latency.hasValue())
-          operation->emitError("Could not find wr_latency.");
+        assert(latency.hasValue());
         portAssignments[operation] = std::make_pair(i, latency.getValue());
       }
     }

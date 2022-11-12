@@ -44,16 +44,84 @@ private:
   LogicalResult visitOp(mlir::memref::AllocaOp);
   LogicalResult visitOp(mlir::AffineForOp);
   LogicalResult visitOp(mlir::AffineLoadOp);
+  LogicalResult visitOp(mlir::AffineStoreOp);
   LogicalResult visitOp(mlir::func::CallOp);
   LogicalResult visitOp(mlir::arith::NegFOp);
   LogicalResult visitOp(mlir::LLVM::UndefOp);
+  Optional<int> selectRdPort(Value mem);
+  Optional<int> selectWrPort(Value mem);
   void safelyEraseOps();
 
 private:
   SmallVector<Operation *> toErase;
+  llvm::DenseMap<Value, int> mapMemref2PrevUsedRdPort;
+  llvm::DenseMap<Value, int> mapMemref2PrevUsedWrPort;
 };
 
 } // namespace
+
+ArrayAttr getMemrefPortAttr(Value memref) {
+  assert(memref.getType().isa<mlir::MemRefType>());
+  ArrayAttr portsAttr;
+  if (auto *operation = memref.getDefiningOp()) {
+    auto allocaOp = dyn_cast<mlir::memref::AllocaOp>(operation);
+    assert(allocaOp);
+    portsAttr = allocaOp->getAttrOfType<ArrayAttr>("hir.memref.ports");
+  } else {
+    auto funcOp =
+        dyn_cast<mlir::func::FuncOp>(memref.getParentRegion()->getParentOp());
+    assert(funcOp);
+    size_t argNum;
+    for (argNum = 0; argNum < memref.getParentRegion()->getNumArguments();
+         argNum++)
+      if (memref.getParentRegion()->getArgument(argNum) == memref)
+        break;
+
+    auto memrefAttrs = funcOp->getAttrOfType<ArrayAttr>("arg_attrs")[argNum]
+                           .dyn_cast<DictionaryAttr>();
+    if (memrefAttrs)
+      portsAttr = memrefAttrs.getAs<ArrayAttr>("hir.memref.ports");
+  }
+  return portsAttr;
+}
+
+Optional<int> HIRPragma::selectRdPort(Value mem) {
+  auto portsAttr = getMemrefPortAttr(mem);
+  assert(0 < portsAttr.size() && portsAttr.size() <= 2);
+  if (portsAttr.size() == 1)
+    return 0;
+  auto prevPortNum = mapMemref2PrevUsedRdPort[mem];
+  auto nextPortNum = (prevPortNum + 1) % 2;
+  auto pOld = portsAttr[prevPortNum].dyn_cast<DictionaryAttr>();
+  auto pNext = portsAttr[nextPortNum].dyn_cast<DictionaryAttr>();
+
+  if (helper::isMemrefRdPort(pNext)) {
+    mapMemref2PrevUsedRdPort[mem] = nextPortNum;
+    return nextPortNum;
+  }
+  if (helper::isMemrefRdPort(pOld))
+    return prevPortNum;
+  return llvm::None;
+}
+
+Optional<int> HIRPragma::selectWrPort(Value mem) {
+  auto portsAttr = getMemrefPortAttr(mem);
+  assert(0 < portsAttr.size() && portsAttr.size() <= 2);
+  if (portsAttr.size() == 1)
+    return 0;
+  auto prevPortNum = mapMemref2PrevUsedWrPort[mem];
+  auto nextPortNum = (prevPortNum + 1) % 2;
+  auto pOld = portsAttr[prevPortNum].dyn_cast<DictionaryAttr>();
+  auto pNext = portsAttr[nextPortNum].dyn_cast<DictionaryAttr>();
+
+  if (helper::isMemrefWrPort(pNext)) {
+    mapMemref2PrevUsedWrPort[mem] = nextPortNum;
+    return nextPortNum;
+  }
+  if (helper::isMemrefWrPort(pOld))
+    return prevPortNum;
+  return llvm::None;
+}
 
 void HIRPragma::safelyEraseOps() {
   llvm::DenseSet<Operation *> erasedOps;
@@ -103,6 +171,9 @@ void HIRPragma::runOnOperation() {
           if (failed(visitOp(op)))
             return WalkResult::interrupt();
         } else if (auto op = dyn_cast<mlir::AffineLoadOp>(operation)) {
+          if (failed(visitOp(op)))
+            return WalkResult::interrupt();
+        } else if (auto op = dyn_cast<mlir::AffineStoreOp>(operation)) {
           if (failed(visitOp(op)))
             return WalkResult::interrupt();
         } else if (auto op = dyn_cast<mlir::func::CallOp>(operation)) {
@@ -317,42 +388,31 @@ LogicalResult HIRPragma::visitOp(mlir::AffineForOp op) {
 }
 
 LogicalResult HIRPragma::visitOp(mlir::AffineLoadOp op) {
-  auto memref = op.getMemref();
-  IntegerAttr resultDelay;
-  ArrayAttr portsAttr;
-  if (auto *operation = memref.getDefiningOp()) {
-    auto allocaOp = dyn_cast<mlir::memref::AllocaOp>(operation);
-    assert(allocaOp);
-    portsAttr = allocaOp->getAttrOfType<ArrayAttr>("hir.memref.ports");
-  } else {
-    auto funcOp =
-        dyn_cast<mlir::func::FuncOp>(memref.getParentRegion()->getParentOp());
-    assert(funcOp);
-    size_t argNum;
-    for (argNum = 0; argNum < memref.getParentRegion()->getNumArguments();
-         argNum++)
-      if (memref.getParentRegion()->getArgument(argNum) == memref)
-        break;
-
-    auto memrefAttrs = funcOp->getAttrOfType<ArrayAttr>("arg_attrs")[argNum]
-                           .dyn_cast<DictionaryAttr>();
-    if (memrefAttrs)
-      portsAttr = memrefAttrs.getAs<ArrayAttr>("hir.memref.ports");
-  }
-
-  if (portsAttr)
-    for (auto port : portsAttr)
-      if (auto rdLatency = port.dyn_cast<DictionaryAttr>().getAs<IntegerAttr>(
-              "rd_latency")) {
-        resultDelay = rdLatency;
-        break;
-      }
-
-  if (!resultDelay) {
-    return op->emitError("Could not find a read port of the memref.");
-  }
   Builder builder(op);
+  auto memref = op.getMemref();
+  ArrayAttr portsAttr = getMemrefPortAttr(memref);
+  auto rdPortNum = selectRdPort(memref);
+
+  if (!rdPortNum)
+    return op->emitError("Could not find a read port of the memref.");
+
+  IntegerAttr resultDelay = builder.getI64IntegerAttr(
+      helper::getMemrefPortRdLatency(portsAttr[*rdPortNum]).getValue());
+
   op->setAttr("result_delays", builder.getArrayAttr(resultDelay));
+  op->setAttr("hir.memref_port", builder.getI64IntegerAttr(*rdPortNum));
+  return success();
+}
+
+LogicalResult HIRPragma::visitOp(mlir::AffineStoreOp op) {
+  Builder builder(op);
+  auto memref = op.getMemref();
+  auto wrPortNum = selectWrPort(memref);
+
+  if (!wrPortNum)
+    return op->emitError("Could not find a read port of the memref.");
+
+  op->setAttr("hir.memref_port", builder.getI64IntegerAttr(*wrPortNum));
   return success();
 }
 

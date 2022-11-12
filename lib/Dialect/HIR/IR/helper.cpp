@@ -488,4 +488,5 @@ llvm::Optional<int64_t> getOptionalTimeOffset(mlir::Operation *operation) {
     return llvm::None;
   return offsetAttr.getInt();
 }
+
 } // namespace helper
