@@ -32,6 +32,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include <iostream>
+#include <list>
 #include <stack>
 
 using namespace circt;
@@ -48,6 +49,7 @@ private:
   LogicalResult visitOp(mlir::func::CallOp);
   LogicalResult visitOp(mlir::arith::NegFOp);
   LogicalResult visitOp(mlir::LLVM::UndefOp);
+  LogicalResult visitArithFOp(Operation *operation);
   Optional<int> selectRdPort(Value mem);
   Optional<int> selectWrPort(Value mem);
   void safelyEraseOps();
@@ -60,28 +62,34 @@ private:
 
 } // namespace
 
-ArrayAttr getMemrefPortAttr(Value memref) {
-  assert(memref.getType().isa<mlir::MemRefType>());
+ArrayAttr getMemrefPortAttr(Value mem) {
+  assert(mem.getType().isa<mlir::MemRefType>());
   ArrayAttr portsAttr;
-  if (auto *operation = memref.getDefiningOp()) {
+  if (auto *operation = mem.getDefiningOp()) {
     auto allocaOp = dyn_cast<mlir::memref::AllocaOp>(operation);
     assert(allocaOp);
     portsAttr = allocaOp->getAttrOfType<ArrayAttr>("hir.memref.ports");
+    if (!portsAttr)
+      allocaOp->emitError("Could not find hir.memref.ports attr.");
   } else {
     auto funcOp =
-        dyn_cast<mlir::func::FuncOp>(memref.getParentRegion()->getParentOp());
+        dyn_cast<mlir::func::FuncOp>(mem.getParentRegion()->getParentOp());
     assert(funcOp);
     size_t argNum;
-    for (argNum = 0; argNum < memref.getParentRegion()->getNumArguments();
+    for (argNum = 0; argNum < mem.getParentRegion()->getNumArguments();
          argNum++)
-      if (memref.getParentRegion()->getArgument(argNum) == memref)
+      if (mem.getParentRegion()->getArgument(argNum) == mem)
         break;
 
     auto memrefAttrs = funcOp->getAttrOfType<ArrayAttr>("arg_attrs")[argNum]
                            .dyn_cast<DictionaryAttr>();
     if (memrefAttrs)
       portsAttr = memrefAttrs.getAs<ArrayAttr>("hir.memref.ports");
+
+    if (!portsAttr)
+      funcOp->emitError("Could not find hir.memref.ports attr for arg.");
   }
+
   return portsAttr;
 }
 
@@ -132,6 +140,7 @@ void HIRPragma::safelyEraseOps() {
     erasedOps.insert(operation);
     operation->erase();
   }
+  toErase.clear();
 }
 
 void HIRPragma::runOnOperation() {
@@ -140,58 +149,69 @@ void HIRPragma::runOnOperation() {
   moduleOp->setAttrs(builder.getDictionaryAttr(
       builder.getNamedAttr("hir.hls", builder.getUnitAttr())));
 
+  std::list<mlir::func::FuncOp> hwAccelOps;
   // Hoist all declarations and put the hw functions in a set.
   // FIXME: Currently we assume that top level function only calls declarations.
   // All functions with body are inlined.
   // We need to process all the child functions in post-order starting from top
   // level func.
-  moduleOp->walk([this, &builder](Operation *operation) {
+  moduleOp->walk([&hwAccelOps, this, &builder](Operation *operation) {
     if (auto op = dyn_cast<mlir::func::FuncOp>(operation)) {
       if (op.isDeclaration()) {
-        auto newDecl = builder.cloneWithoutRegions(op);
-        newDecl->setAttr("hwAccel", builder.getUnitAttr());
-        toErase.push_back(op);
+        // push the declarations to the front so that they are processed before
+        // their use.
+        op->setAttr("hwAccel", builder.getUnitAttr());
+        hwAccelOps.push_front(op);
       } else if (op.getName() == this->topLevelFuncName) {
         op->setAttr("hwAccel", builder.getUnitAttr());
+        hwAccelOps.push_back(op);
       } else {
         toErase.push_back(op);
       }
     }
   });
 
-  auto walkresult =
-      moduleOp->walk<mlir::WalkOrder::PreOrder>([this](Operation *operation) {
-        if (auto op = dyn_cast<mlir::func::FuncOp>(operation)) {
-          if (failed(visitOp(op)))
-            return WalkResult::interrupt();
-        } else if (auto op = dyn_cast<mlir::memref::AllocaOp>(operation)) {
-          if (failed(visitOp(op)))
-            return WalkResult::interrupt();
-        } else if (auto op = dyn_cast<mlir::AffineForOp>(operation)) {
-          if (failed(visitOp(op)))
-            return WalkResult::interrupt();
-        } else if (auto op = dyn_cast<mlir::AffineLoadOp>(operation)) {
-          if (failed(visitOp(op)))
-            return WalkResult::interrupt();
-        } else if (auto op = dyn_cast<mlir::AffineStoreOp>(operation)) {
-          if (failed(visitOp(op)))
-            return WalkResult::interrupt();
-        } else if (auto op = dyn_cast<mlir::func::CallOp>(operation)) {
-          if (failed(visitOp(op)))
-            return WalkResult::interrupt();
-        } else if (auto op = dyn_cast<mlir::arith::NegFOp>(operation)) {
-          if (failed(visitOp(op)))
-            return WalkResult::interrupt();
-        } else if (auto op = dyn_cast<mlir::LLVM::UndefOp>(operation)) {
-          if (failed(visitOp(op)))
-            return WalkResult::interrupt();
-        }
-        return WalkResult::advance();
-      });
-  safelyEraseOps();
-  if (walkresult.wasInterrupted()) {
-    signalPassFailure();
+  for (auto funcOp : hwAccelOps) {
+    if (failed(visitOp(funcOp))) {
+      signalPassFailure();
+      break;
+    }
+    auto walkresult =
+        funcOp->walk<mlir::WalkOrder::PreOrder>([this](Operation *operation) {
+          if (auto op = dyn_cast<mlir::memref::AllocaOp>(operation)) {
+            if (failed(visitOp(op)))
+              return WalkResult::interrupt();
+          } else if (auto op = dyn_cast<mlir::AffineForOp>(operation)) {
+            if (failed(visitOp(op)))
+              return WalkResult::interrupt();
+          } else if (auto op = dyn_cast<mlir::AffineLoadOp>(operation)) {
+            if (failed(visitOp(op)))
+              return WalkResult::interrupt();
+          } else if (auto op = dyn_cast<mlir::AffineStoreOp>(operation)) {
+            if (failed(visitOp(op)))
+              return WalkResult::interrupt();
+          } else if (auto op = dyn_cast<mlir::func::CallOp>(operation)) {
+            if (failed(visitOp(op)))
+              return WalkResult::interrupt();
+          } else if (auto op = dyn_cast<mlir::arith::NegFOp>(operation)) {
+            if (failed(visitOp(op)))
+              return WalkResult::interrupt();
+          } else if (auto op = dyn_cast<mlir::LLVM::UndefOp>(operation)) {
+            if (failed(visitOp(op)))
+              return WalkResult::interrupt();
+          } else if (isa<mlir::arith::AddFOp, mlir::arith::SubFOp,
+                         mlir::arith::MulFOp>(operation)) {
+            if (failed(visitArithFOp(operation)))
+              return WalkResult::interrupt();
+          }
+          return WalkResult::advance();
+        });
+    if (walkresult.wasInterrupted()) {
+      signalPassFailure();
+      break;
+    }
   }
+  safelyEraseOps();
 }
 
 DictionaryAttr getHIRValueAttrs(DictionaryAttr hlsAttrs) {
@@ -298,6 +318,9 @@ Optional<DictionaryAttr> getHIRMemrefAttrs(Operation *operation,
       memKind = builder.getStringAttr("reg");
     else if (auto impl = hlsAttrs.getAs<StringAttr>("hls.BIND_STORAGE_IMPL"))
       memKind = builder.getStringAttr(impl.strref().lower());
+    if (!memKind)
+      return operation->emitError("Could not determine memory impl."),
+             llvm::None;
     attrs.push_back(builder.getNamedAttr("mem_kind", memKind));
   }
 
@@ -422,9 +445,14 @@ LogicalResult HIRPragma::visitOp(mlir::func::CallOp op) {
     return op->emitError("Could not find callee for this call op.");
 
   SmallVector<Attribute> resultDelays;
-  for (auto resAttr : calleeOp->getAttrOfType<ArrayAttr>("res_attrs"))
-    resultDelays.push_back(
-        resAttr.dyn_cast<DictionaryAttr>().getAs<IntegerAttr>("hir.delay"));
+  for (auto resAttr : calleeOp->getAttrOfType<ArrayAttr>("res_attrs")) {
+    auto delayAttr =
+        resAttr.dyn_cast<DictionaryAttr>().getAs<IntegerAttr>("hir.delay");
+    if (!delayAttr) {
+      calleeOp->emitWarning("Could not find hir.delay attr.");
+    }
+    resultDelays.push_back(delayAttr);
+  }
 
   Builder builder(op);
   op->setAttr("result_delays", builder.getArrayAttr(resultDelays));
@@ -465,6 +493,37 @@ LogicalResult HIRPragma::visitOp(mlir::LLVM::UndefOp op) {
     toErase.push_back(user);
   }
   toErase.push_back(op);
+  return success();
+}
+
+LogicalResult HIRPragma::visitArithFOp(Operation *operation) {
+  assert(operation->getNumResults() == 1);
+
+  std::string opName;
+  std::string typeStr =
+      "f" +
+      std::to_string(operation->getResult(0).getType().getIntOrFloatBitWidth());
+
+  if (isa<mlir::arith::AddFOp>(operation))
+    opName = "add_" + typeStr;
+  else if (isa<mlir::arith::SubFOp>(operation))
+    opName = "sub_" + typeStr;
+  else if (isa<mlir::arith::MulFOp>(operation))
+    opName = "mul_" + typeStr;
+  else
+    return operation->emitError("Unknown arith operation.");
+
+  auto funcDecl =
+      dyn_cast_or_null<mlir::func::FuncOp>(getOperation().lookupSymbol(opName));
+  if (!funcDecl) {
+    return operation->emitError("Could not find the decl of function ")
+           << opName << " to lower following arith op.";
+  }
+  OpBuilder builder(operation);
+  auto arithCallOp = builder.create<mlir::func::CallOp>(
+      operation->getLoc(), funcDecl, operation->getOperands());
+  operation->replaceAllUsesWith(arithCallOp);
+  toErase.push_back(operation);
   return success();
 }
 //-----------------------------------------------------------------------------

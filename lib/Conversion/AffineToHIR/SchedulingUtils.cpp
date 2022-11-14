@@ -73,7 +73,8 @@ int64_t getMemOpSafeDelay(Operation *operation,
         return helper::getMemrefPortWrLatency(port).getValue();
       }
     }
-    llvm_unreachable("Could not find memref wr port");
+    operation->emitError("Could not find memref wr port");
+    llvm_unreachable("Expected a write port.");
   }
   assert(isa<mlir::AffineLoadOp>(operation));
   // If the source op is a load then a store op can be scheduled in the same
