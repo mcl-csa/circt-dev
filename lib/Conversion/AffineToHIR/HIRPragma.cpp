@@ -155,11 +155,12 @@ void HIRPragma::runOnOperation() {
   // All functions with body are inlined.
   // We need to process all the child functions in post-order starting from top
   // level func.
-  moduleOp->walk([&hwAccelOps, this, &builder](Operation *operation) {
+  moduleOp->walk([this, &hwAccelOps, &builder](Operation *operation) {
     if (auto op = dyn_cast<mlir::func::FuncOp>(operation)) {
       if (op.isDeclaration()) {
-        // push the declarations to the front so that they are processed before
-        // their use.
+        // push the declarations to the front so that they are processed
+        // before their use. hir-to-hw lowering pass does not work if the
+        // declarations come later.
         op->setAttr("hwAccel", builder.getUnitAttr());
         hwAccelOps.push_front(op);
       } else if (op.getName() == this->topLevelFuncName) {
@@ -171,13 +172,26 @@ void HIRPragma::runOnOperation() {
     }
   });
 
+  if (hwAccelOps.size() == 0)
+    return;
+  builder.setInsertionPointToStart(hwAccelOps.front()->getBlock());
+  // Hoist all decls. We need decls before use in hir-to-hw pass.
+  for (auto &funcOp : hwAccelOps) {
+    if (funcOp.isDeclaration()) {
+      Operation *old = funcOp;
+      funcOp =
+          dyn_cast<mlir::func::FuncOp>(builder.cloneWithoutRegions(funcOp));
+      old->erase();
+    }
+  }
+
   for (auto funcOp : hwAccelOps) {
     if (failed(visitOp(funcOp))) {
       signalPassFailure();
       break;
     }
     auto walkresult =
-        funcOp->walk<mlir::WalkOrder::PreOrder>([this](Operation *operation) {
+        funcOp->walk<mlir::WalkOrder::PostOrder>([this](Operation *operation) {
           if (auto op = dyn_cast<mlir::memref::AllocaOp>(operation)) {
             if (failed(visitOp(op)))
               return WalkResult::interrupt();
@@ -377,22 +391,26 @@ LogicalResult HIRPragma::visitOp(mlir::memref::AllocaOp op) {
     return failure();
   op->setAttrs(*newAttr);
 
-  // Check that only one load and one store is present.
+  // Remove unnecessary load ops.
+  // FIXME: This is too simple. It can not eliminate a load if another load to a
+  // different address is in between. Use a map instead of one 'loadOp' variable
+  // to handle that.
   // Optional<mlir::AffineLoadOp> loadOp;
-  // Optional<mlir::AffineStoreOp> storeOp;
   // for (auto *user : op.getMemref().getUsers()) {
-  //   if (auto u = dyn_cast<mlir::AffineLoadOp>(user)) {
-  //     if (loadOp && loadOp->getIndices() != u.getIndices())
-  //       return op.emitError("Only one affine.load is supported.");
-  //     loadOp = u;
-  //   } else if (auto u = dyn_cast<mlir::AffineStoreOp>(user)) {
-  //     if (storeOp && storeOp->getIndices() != u.getIndices())
-  //       return op.emitError("Only one affine.store is supported.");
-  //     storeOp = u;
-  //   } else
-  //     return user->emitError(
-  //         "Only affine.load and affine.store are supported.");
-  // }
+  //  if (auto u = dyn_cast<mlir::AffineLoadOp>(user)) {
+  //    if (loadOp && loadOp->getIndices() == u.getIndices()) {
+  //      u->replaceAllUsesWith(*loadOp);
+  //      toErase.push_back(u);
+  //    } else {
+  //      loadOp = u;
+  //    }
+  //  } else if (auto u = dyn_cast<mlir::AffineStoreOp>(user)) {
+  //    loadOp = llvm::None;
+  //  } else
+  //    return user->emitError("Only affine.load and affine.store are supported
+  //    "
+  //                           "by -hir-pragma pass.");
+  //}
   return success();
 }
 
