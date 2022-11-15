@@ -7,6 +7,8 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/Support/FileSystem.h"
+#include <cstdint>
+#include <tuple>
 using namespace circt;
 // Local functions.
 llvm::Optional<int>
@@ -336,21 +338,37 @@ llvm::Optional<int64_t> MemoryDependenceILPHandler::calculateSlack() {
   os.close();
   return d;
 }
+std::tuple<int, int, int> getConstantLoopBounds(Value iv) {
+  auto op = dyn_cast<mlir::AffineForOp>(iv.getParentRegion()->getParentOp());
+  assert(op.getInductionVar() == iv);
+  auto lb = op.getLowerBound().getMap().getSingleConstantResult();
+  auto ub = op.getUpperBound().getMap().getSingleConstantResult();
+  auto step = op.getStep();
+  return std::make_tuple(lb, ub, step);
+}
 
-void MemoryDependenceILPHandler::insertRowCoefficients(
+int64_t MemoryDependenceILPHandler::insertRowCoefficients(
     SmallVectorImpl<int> &rowCoeffVec, ArrayRef<int64_t> coeffs,
     OperandRange memIndices, ArrayRef<Value> loopIVs, bool isNegativeCoeff) {
   assert(memIndices.size() ==
          coeffs.size() -
              1); // coeffs contains the constant as well as the last element.
+  int64_t accumulatedLowerBounds = 0;
   for (Value iv : loopIVs) {
+    auto bounds = getConstantLoopBounds(iv);
     int coeff = 0;
     auto loc = findLocInArray(iv, memIndices);
     if (loc.hasValue()) {
-      coeff = coeffs[loc.getValue()];
+      // Multiply the loop step since the ilp variable corresponding to iv
+      // represents the loop iteration number, i.e. it can be thought of a
+      // canonical iv which lb=0 and step=1.
+      // The actual iv = step*canonical_iv + lb.
+      coeff = std::get<2>(bounds) * coeffs[loc.getValue()];
+      accumulatedLowerBounds += std::get<0>(bounds);
     }
     rowCoeffVec.push_back(isNegativeCoeff ? -coeff : coeff);
   }
+  return accumulatedLowerBounds;
 }
 
 void MemoryDependenceILPHandler::addILPColumns() {
@@ -401,21 +419,23 @@ void MemoryDependenceILPHandler::addMemoryConstraintILPRows() {
   // Add constraint for address equivalence.
   for (size_t row = 0; row < numRows; row++) {
     SmallVector<int, 4> rowCoeffVec;
-
+    int64_t constCoeff = 0;
     SmallVector<int64_t> toCoeffs;
     assert(getFlattenedAffineExpr(toMemAccessMap.getResult(row),
                                   toMemAccessMap.getNumDims(), 0, &toCoeffs)
                .succeeded());
-    insertRowCoefficients(rowCoeffVec, toCoeffs, getMemIndices(to),
-                          toInfo.getParentLoopIVs(), false);
+    constCoeff -=
+        insertRowCoefficients(rowCoeffVec, toCoeffs, getMemIndices(to),
+                              toInfo.getParentLoopIVs(), false);
 
     SmallVector<int64_t> fromCoeffs;
     assert(getFlattenedAffineExpr(fromMemAccessMap.getResult(row),
                                   fromMemAccessMap.getNumDims(), 0, &fromCoeffs)
                .succeeded());
-    insertRowCoefficients(rowCoeffVec, fromCoeffs, getMemIndices(from),
-                          fromInfo.getParentLoopIVs(), true);
-    auto constCoeff =
+    constCoeff +=
+        insertRowCoefficients(rowCoeffVec, fromCoeffs, getMemIndices(from),
+                              fromInfo.getParentLoopIVs(), true);
+    constCoeff +=
         fromCoeffs[fromCoeffs.size() - 1] - toCoeffs[toCoeffs.size() - 1];
     addRow(rowCoeffVec, GLP_FX, constCoeff, constCoeff);
   }

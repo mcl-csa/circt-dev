@@ -58,6 +58,7 @@ private:
 private:
   LogicalResult visitOperation(Operation *);
   LogicalResult visitOp(mlir::func::FuncOp);
+  LogicalResult visitOp(hir::ProbeOp);
   LogicalResult visitOp(mlir::func::ReturnOp);
   LogicalResult visitOp(mlir::AffineForOp);
   LogicalResult visitOp(mlir::AffineLoadOp);
@@ -124,7 +125,7 @@ SmallVector<Value> AffineToHIRImpl::getFlattenedHIRIndices(
     Value timeVar, int64_t offset) {
 
   // For memref<i32> like type.
-  if (indices.size() == 0) {
+  if (affineMap.getNumResults() == 0) {
     assert(memrefTy.getNumBanks() * memrefTy.getNumElementsPerBank() == 1);
     return {builder
                 .create<mlir::arith::ConstantOp>(builder.getUnknownLoc(),
@@ -317,6 +318,17 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::FuncOp op) {
   pushInsertionBlk(funcOp.getFuncBody().front());
   return success();
 }
+LogicalResult AffineToHIRImpl::visitOp(hir::ProbeOp op) {
+  auto hirInputValue = valueConverter.getBlockLocalValue(
+      builder, op.input(), builder.getInsertionBlock());
+
+  builder.create<hir::ProbeOp>(op->getLoc(), hirInputValue.getValue(),
+                               op.verilog_name());
+  if (hirInputValue.getTimeVar())
+    builder.create<hir::ProbeOp>(op->getLoc(), hirInputValue.getTimeVar(),
+                                 op.verilog_name().str() + "_valid");
+  return success();
+}
 
 LogicalResult AffineToHIRImpl::visitOp(mlir::func::ReturnOp op) {
   auto hirValues = valueConverter.getBlockLocalValues(
@@ -331,16 +343,16 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::ReturnOp op) {
 }
 
 LogicalResult AffineToHIRImpl::visitOp(mlir::AffineForOp op) {
+  auto originalLb = op.getLowerBound().getMap().getSingleConstantResult();
+  auto originalStep = op.getStep();
   auto lb = builder.create<circt::hw::ConstantOp>(
-      builder.getUnknownLoc(),
-      builder.getI64IntegerAttr(
-          op.getLowerBound().getMap().getSingleConstantResult()));
+      builder.getUnknownLoc(), builder.getI64IntegerAttr(originalLb));
   auto ub = builder.create<circt::hw::ConstantOp>(
       builder.getUnknownLoc(),
       builder.getI64IntegerAttr(
           op.getUpperBound().getMap().getSingleConstantResult()));
   auto step = builder.create<circt::hw::ConstantOp>(
-      builder.getUnknownLoc(), builder.getI64IntegerAttr(op.getStep()));
+      builder.getUnknownLoc(), builder.getI64IntegerAttr(originalStep));
 
   Value tRegion = builder.getInsertionBlock()->getArguments().back();
   auto loopII = schedulingAnalysis->getLoopII(op);
@@ -624,6 +636,8 @@ LogicalResult AffineToHIRImpl::visitOperation(Operation *operation) {
     return visitOp(op);
   if (auto op = dyn_cast<mlir::func::CallOp>(operation))
     return visitOp(op);
+  if (auto op = dyn_cast<hir::ProbeOp>(operation))
+    return visitOp(op);
   if (isa<arith::ArithmeticDialect>(operation->getDialect()))
     return visitFFIOp(operation);
   if (isa<mlir::func::CallOp>(operation))
@@ -646,7 +660,6 @@ void AffineToHIRImpl::runOnOperation() {
   }
   mlirFuncOp.walk<WalkOrder::PreOrder>([this](Operation *operation) {
     if (failed(visitOperation(operation))) {
-      operation->emitError("Could not convert this to hir.");
       return WalkResult::interrupt();
     }
     return WalkResult::advance();

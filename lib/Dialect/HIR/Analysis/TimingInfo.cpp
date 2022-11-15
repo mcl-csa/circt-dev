@@ -1,5 +1,6 @@
 #include "circt/Dialect/HIR/Analysis/TimingInfo.h"
 #include "circt/Dialect/Comb/CombDialect.h"
+#include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "glpk.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
@@ -18,7 +19,18 @@ void EquivalentTimeMap::registerEquivalentTime(Value timeVar, Time time) {
       std::make_pair(time.getOffset(), timeVar));
 }
 
-Time EquivalentTimeMap::getEquivalentTimeWithSmallerOffset(Time time) {
+unsigned int EquivalentTimeMap::getLexicalOrder(ScheduledOp op) {
+  auto it = mapOpToLexicalOrder.find(op);
+  assert(it != mapOpToLexicalOrder.end());
+  return it->getSecond();
+}
+
+unsigned int EquivalentTimeMap::getLexicalOrder(Value op) {
+  return getLexicalOrder(op.getDefiningOp());
+}
+
+Time EquivalentTimeMap::getEquivalentTimeWithSmallerOffset(ScheduledOp op) {
+  auto time = op.getStartTime();
   auto equivalentTimeVarForDifferentOffsets =
       mapTimeVarToOffsetAndEquivalentTimeVar[time.getTimeVar()];
 
@@ -30,6 +42,9 @@ Time EquivalentTimeMap::getEquivalentTimeWithSmallerOffset(Time time) {
     if (offsetAndEquivalentTimeVar.first < offset)
       continue;
     if (offsetAndEquivalentTimeVar.first > time.getOffset())
+      continue;
+    if (getLexicalOrder(op) <=
+        getLexicalOrder(offsetAndEquivalentTimeVar.second))
       continue;
     offset = offsetAndEquivalentTimeVar.first;
     newTimeVar = offsetAndEquivalentTimeVar.second;
@@ -46,7 +61,8 @@ Time EquivalentTimeMap::getEquivalentTimeWithSmallerOffset(Time time) {
 // TimingInfo class methods.
 //-----------------------------------------------------------------------------
 
-TimingInfo::TimingInfo(FuncOp op) {
+TimingInfo::TimingInfo(FuncOp op)
+    : equivalentTimeMap(mapOpToLexicalOrder), currentLexicalPos(0) {
   auto walkResult =
       op.walk<mlir::WalkOrder::PreOrder>([this](Operation *operation) {
         if (auto scheduledOp = dyn_cast<ScheduledOp>(operation)) {
@@ -78,6 +94,7 @@ void TimingInfo::registerValue(Value value, Time time) {
 }
 
 LogicalResult TimingInfo::visitOp(ScheduledOp op) {
+  mapOpToLexicalOrder[op] = currentLexicalPos++;
   auto resultsWithTime = op.getResultsWithTime();
   for (auto resultWithTime : resultsWithTime) {
     Value result = resultWithTime.first;
@@ -86,8 +103,8 @@ LogicalResult TimingInfo::visitOp(ScheduledOp op) {
     if ((result.getType().isa<hir::TimeType>() &&
          isa<hir::ForOp>(op.getOperation())) ||
         helper::isBuiltinSizedType(result.getType())) {
-      Time time = resultWithTime.second;
-      registerValue(result, time);
+      if (auto time = resultWithTime.second)
+        registerValue(result, *time);
     }
   }
   return success();
@@ -123,6 +140,6 @@ Time TimingInfo::getTime(Value v) {
   return timeIter->second;
 }
 
-Time TimingInfo::getOptimizedTime(Time time) {
-  return equivalentTimeMap.getEquivalentTimeWithSmallerOffset(time);
+Time TimingInfo::getOptimizedTime(hir::ScheduledOp op) {
+  return equivalentTimeMap.getEquivalentTimeWithSmallerOffset(op);
 }

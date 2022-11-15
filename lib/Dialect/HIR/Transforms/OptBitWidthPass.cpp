@@ -14,9 +14,6 @@ public:
 private:
   LogicalResult visitOp(hir::ForOp);
   LogicalResult visitOp(hir::DelayOp);
-
-private:
-  Optional<TimingInfo> timingInfo;
 };
 
 unsigned int getMinBitWidth(Value v, const DenseSet<Operation *> ignoredUsers) {
@@ -151,7 +148,6 @@ LogicalResult OptBitWidthPass::visitOp(hir::ForOp op) {
 
 void OptBitWidthPass::runOnOperation() {
   auto funcOp = getOperation();
-  timingInfo = TimingInfo(funcOp);
   // We need post-order walk to ensure that iter-args of inner loops are
   // optimized before visiting outer loops because outer loop induction-var is
   // often captured in the inner loop.

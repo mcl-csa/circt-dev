@@ -341,8 +341,9 @@ void BusRecvOp::setStartTime(hir::Time time) {
                                     time.getOffset()));
 }
 
-SmallVector<std::pair<Value, hir::Time>, 4> CallOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+CallOp::getResultsWithTime() {
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   auto funcTy = this->funcTy().dyn_cast<hir::FuncType>();
   for (size_t i = 0; i < this->getNumResults(); i++) {
     Value res = this->getResult(i);
@@ -362,9 +363,9 @@ SmallVector<std::pair<Value, hir::Time>, 4> CallOp::getResultsWithTime() {
   return output;
 }
 
-SmallVector<std::pair<Value, hir::Time>, 4>
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
 CallInstanceOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   auto funcTy = this->funcTy().dyn_cast<hir::FuncType>();
   for (size_t i = 0; i < this->getNumResults(); i++) {
     Value res = this->getResult(i);
@@ -383,17 +384,22 @@ CallInstanceOp::getResultsWithTime() {
   }
   return output;
 }
-SmallVector<std::pair<Value, hir::Time>, 4> ForOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+ForOp::getResultsWithTime() {
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   Value endTimeVar = this->getResults().back();
   auto tripCount = this->getTripCount();
   auto ii = this->getInitiationInterval();
-  hir::Time endTime;
+  Optional<hir::Time> endTime;
   if (tripCount.hasValue() && ii.hasValue()) {
     hir::Time startTime = this->getStartTime();
     endTime = startTime.addOffset(tripCount.getValue() * ii.getValue());
   } else {
     endTime = Time(endTimeVar, 0);
+  }
+  if (!endTime.has_value()) {
+    output.push_back(std::make_pair(endTimeVar, endTime));
+    return output;
   }
 
   if (this->iter_arg_delays()) {
@@ -401,7 +407,7 @@ SmallVector<std::pair<Value, hir::Time>, 4> ForOp::getResultsWithTime() {
     for (size_t i = 0; i < iterArgDelays.size(); i++) {
       auto delay = iterArgDelays[i].dyn_cast<mlir::IntegerAttr>().getInt();
       auto result = this->getResult(i);
-      output.push_back(std::make_pair(result, endTime.addOffset(delay)));
+      output.push_back(std::make_pair(result, endTime->addOffset(delay)));
     }
   }
 
@@ -409,8 +415,9 @@ SmallVector<std::pair<Value, hir::Time>, 4> ForOp::getResultsWithTime() {
   return output;
 }
 
-SmallVector<std::pair<Value, hir::Time>, 4> WhileOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+WhileOp::getResultsWithTime() {
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   Value endTimeVar = this->getResults().back();
   if (this->iter_arg_delays()) {
     auto iterArgDelays = this->iter_arg_delays().getValue();
@@ -424,20 +431,22 @@ SmallVector<std::pair<Value, hir::Time>, 4> WhileOp::getResultsWithTime() {
   return output;
 }
 
-SmallVector<std::pair<Value, hir::Time>, 4>
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
 IsFirstIterOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   output.push_back(std::make_pair(this->getResult(), this->getStartTime()));
   return output;
 }
 
-SmallVector<std::pair<Value, hir::Time>, 4> NextIterOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+NextIterOp::getResultsWithTime() {
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   return output;
 }
 
-SmallVector<std::pair<Value, hir::Time>, 4> IfOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+IfOp::getResultsWithTime() {
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   auto resultAttrs = this->result_attrs();
   for (size_t i = 0; i < this->getNumResults(); i++) {
     Value res = this->getResult(i);
@@ -457,38 +466,44 @@ SmallVector<std::pair<Value, hir::Time>, 4> IfOp::getResultsWithTime() {
   return output;
 }
 
-SmallVector<std::pair<Value, hir::Time>, 4> DelayOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+DelayOp::getResultsWithTime() {
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   output.push_back(std::make_pair(
       this->getResult(), this->getStartTime().addOffset(this->delay())));
   return output;
 }
 
-SmallVector<std::pair<Value, hir::Time>, 4> TimeOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+TimeOp::getResultsWithTime() {
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   output.push_back(std::make_pair(this->getResult(), this->getStartTime()));
   return output;
 }
 
-SmallVector<std::pair<Value, hir::Time>, 4> LoadOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+LoadOp::getResultsWithTime() {
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   output.push_back(std::make_pair(
       this->getResult(), this->getStartTime().addOffset(this->delay())));
   return output;
 }
 
-SmallVector<std::pair<Value, hir::Time>, 4> StoreOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+StoreOp::getResultsWithTime() {
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   return output;
 }
 
-SmallVector<std::pair<Value, hir::Time>, 4> BusSendOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+BusSendOp::getResultsWithTime() {
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   return output;
 }
 
-SmallVector<std::pair<Value, hir::Time>, 4> BusRecvOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, hir::Time>, 4> output;
+SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+BusRecvOp::getResultsWithTime() {
+  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
   output.push_back(std::make_pair(this->getResult(), this->getStartTime()));
   return output;
 }

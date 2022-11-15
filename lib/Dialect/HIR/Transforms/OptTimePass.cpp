@@ -14,12 +14,11 @@ private:
   LogicalResult visitOp(hir::ScheduledOp op);
 
 private:
-  Optional<TimingInfo> timingInfo;
+  Optional<TimingInfo *> timingInfo;
 };
 
 LogicalResult OptTimePass::visitOp(hir::ScheduledOp op) {
-  Time startTime = op.getStartTime();
-  Time optTime = timingInfo->getOptimizedTime(startTime);
+  Time optTime = (*timingInfo)->getOptimizedTime(op);
   int64_t offset = optTime.getOffset();
   auto parentOp = dyn_cast<RegionOp>(op.getOperation()->getParentOp());
   auto ii = parentOp.getRegionII();
@@ -30,7 +29,7 @@ LogicalResult OptTimePass::visitOp(hir::ScheduledOp op) {
 
   OpBuilder builder(op);
   builder.setInsertionPoint(op);
-  ;
+
   auto lb = builder.create<circt::hw::ConstantOp>(builder.getUnknownLoc(),
                                                   builder.getI64IntegerAttr(0));
   auto ub = builder.create<circt::hw::ConstantOp>(
@@ -54,7 +53,8 @@ LogicalResult OptTimePass::visitOp(hir::ScheduledOp op) {
 
 void OptTimePass::runOnOperation() {
   auto funcOp = getOperation();
-  timingInfo = TimingInfo(funcOp);
+  auto tinfo = TimingInfo(funcOp);
+  timingInfo = &tinfo;
   funcOp.walk([this](Operation *operation) {
     if (auto scheduledOp = dyn_cast<ScheduledOp>(operation)) {
       if (failed(visitOp(scheduledOp)))

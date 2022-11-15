@@ -10,6 +10,7 @@
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/IR/Location.h"
 #include <set>
 namespace circt {
 namespace hir {
@@ -23,10 +24,17 @@ class EquivalentTimeMap {
   DenseMap<Value, SmallVector<std::pair<int64_t, Value>>>
       mapTimeVarToOffsetAndEquivalentTimeVar;
 
+  llvm::DenseMap<ScheduledOp, unsigned int> &mapOpToLexicalOrder;
+  unsigned int getLexicalOrder(ScheduledOp);
+  unsigned int getLexicalOrder(Value);
+
 public:
+  EquivalentTimeMap(
+      llvm::DenseMap<ScheduledOp, unsigned int> &mapOpToLexicalOrder)
+      : mapOpToLexicalOrder(mapOpToLexicalOrder) {}
   void registerEquivalentTime(Value timeVar, Time time);
   /// Get an equivalent time with smaller offset.
-  Time getEquivalentTimeWithSmallerOffset(Time time);
+  Time getEquivalentTimeWithSmallerOffset(ScheduledOp);
 };
 
 /// This class builds the scheduling info for each operation.
@@ -43,7 +51,7 @@ public:
   Time getTime(Value);
   /// Get a new timevar based time which is equivalent to original time but has
   /// smaller offset (and thus requires less shift registers to implement).
-  Time getOptimizedTime(Time);
+  Time getOptimizedTime(hir::ScheduledOp);
 
 private:
   void registerValue(Value, Time);
@@ -56,6 +64,8 @@ private:
   llvm::DenseMap<Value, hir::Time> mapValueToTime;
   llvm::SmallDenseSet<Value> setOfConstants;
   EquivalentTimeMap equivalentTimeMap;
+  llvm::DenseMap<ScheduledOp, unsigned int> mapOpToLexicalOrder;
+  unsigned int currentLexicalPos;
 };
 
 } // namespace hir

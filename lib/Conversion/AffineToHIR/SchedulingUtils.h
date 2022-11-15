@@ -6,6 +6,7 @@
 #include "glpk.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include <cstdint>
 #include <string>
 
 using namespace mlir;
@@ -120,9 +121,10 @@ public:
   llvm::Optional<int64_t> calculateSlack();
 
 private:
-  void insertRowCoefficients(SmallVectorImpl<int> &rowCoeffVec,
-                             ArrayRef<int64_t> coeffs, OperandRange memIndices,
-                             ArrayRef<Value> loopIVs, bool isNegativeCoeff);
+  int64_t insertRowCoefficients(SmallVectorImpl<int> &rowCoeffVec,
+                                ArrayRef<int64_t> coeffs,
+                                OperandRange memIndices,
+                                ArrayRef<Value> loopIVs, bool isNegativeCoeff);
   void addILPColumns();
   void addHappensBeforeConstraintRow();
   void addMemoryConstraintILPRows();

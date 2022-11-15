@@ -34,7 +34,7 @@ let cppNamespace = "circt::hir";
       >,
     InterfaceMethod<
       "Get all results with time.",
-      "llvm::SmallVector<std::pair<Value,hir::Time>,4>", "getResultsWithTime"    
+      "llvm::SmallVector<std::pair<Value,mlir::Optional<hir::Time>>,4>", "getResultsWithTime"    
       >,
     InterfaceMethod<
       "Set new start time.",

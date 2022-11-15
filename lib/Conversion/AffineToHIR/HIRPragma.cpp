@@ -23,6 +23,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -184,7 +185,6 @@ void HIRPragma::runOnOperation() {
       old->erase();
     }
   }
-
   for (auto funcOp : hwAccelOps) {
     if (failed(visitOp(funcOp))) {
       signalPassFailure();
@@ -425,6 +425,12 @@ LogicalResult HIRPragma::visitOp(mlir::AffineForOp op) {
     op->setAttr("UNROLL", unrollAttr);
     op->removeAttr("hls.UNROLL_FACTOR");
   }
+  OpBuilder builder(op);
+  auto lb = op.getLowerBound().getMap().getSingleConstantResult();
+  auto ub = op.getUpperBound().getMap().getSingleConstantResult();
+  auto step = op.getStep();
+  if (ub < lb + step)
+    return op.emitError("The for loop must have atleast one iteration.");
   return success();
 }
 
@@ -458,19 +464,24 @@ LogicalResult HIRPragma::visitOp(mlir::AffineStoreOp op) {
 }
 
 LogicalResult HIRPragma::visitOp(mlir::func::CallOp op) {
+  if (op->getNumResults() == 0)
+    return success();
   auto *calleeOp = getOperation().lookupSymbol(op.getCalleeAttr());
   if (!calleeOp)
     return op->emitError("Could not find callee for this call op.");
 
   SmallVector<Attribute> resultDelays;
-  for (auto resAttr : calleeOp->getAttrOfType<ArrayAttr>("res_attrs")) {
-    auto delayAttr =
-        resAttr.dyn_cast<DictionaryAttr>().getAs<IntegerAttr>("hir.delay");
-    if (!delayAttr) {
-      calleeOp->emitWarning("Could not find hir.delay attr.");
+  if (calleeOp->hasAttrOfType<ArrayAttr>("res_attrs"))
+    for (auto resAttr : calleeOp->getAttrOfType<ArrayAttr>("res_attrs")) {
+      auto delayAttr =
+          resAttr.dyn_cast<DictionaryAttr>().getAs<IntegerAttr>("hir.delay");
+      if (!delayAttr) {
+        calleeOp->emitWarning("Could not find hir.delay attr.");
+      }
+      resultDelays.push_back(delayAttr);
     }
-    resultDelays.push_back(delayAttr);
-  }
+  else
+    return calleeOp->emitError("could not find res_attr in the callee.");
 
   Builder builder(op);
   op->setAttr("result_delays", builder.getArrayAttr(resultDelays));
