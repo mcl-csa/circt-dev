@@ -23,6 +23,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -213,10 +214,18 @@ void HIRPragma::runOnOperation() {
           } else if (auto op = dyn_cast<mlir::LLVM::UndefOp>(operation)) {
             if (failed(visitOp(op)))
               return WalkResult::interrupt();
-          } else if (isa<mlir::arith::AddFOp, mlir::arith::SubFOp,
-                         mlir::arith::MulFOp>(operation)) {
+          } else if (isa<mlir::arith::ConstantOp>(operation)) {
+            WalkResult::advance();
+          } else if (isa<mlir::arith::ArithmeticDialect>(
+                         operation->getDialect())) {
             if (failed(visitArithFOp(operation)))
               return WalkResult::interrupt();
+          } else if (isa<mlir::scf::ForOp, mlir::scf::IfOp, mlir::scf::WhileOp,
+                         mlir::memref::LoadOp, mlir::memref::StoreOp>(
+                         operation)) {
+            return operation->emitError(
+                       "We do not support this op for hir conversion."),
+                   WalkResult::interrupt();
           }
           return WalkResult::advance();
         });
@@ -287,6 +296,7 @@ Optional<DictionaryAttr> getHIRMemrefAttrs(Operation *operation,
     type = ty.str();
   } else {
     operation->emitError("Could not determine memory type.");
+    return llvm::None;
   }
   if (type == "ram_1p") {
     if (!rdPort && !wrPort) {
@@ -322,6 +332,7 @@ Optional<DictionaryAttr> getHIRMemrefAttrs(Operation *operation,
                               builder.getDictionaryAttr({*rdPort, *wrPort})});
   } else {
     operation->emitError("Unknown type of memory : ") << type;
+    return llvm::None;
   }
 
   attrs.push_back(builder.getNamedAttr("hir.memref.ports", portsAttr));
@@ -341,8 +352,8 @@ Optional<DictionaryAttr> getHIRMemrefAttrs(Operation *operation,
   return builder.getDictionaryAttr(attrs);
 }
 
-ArrayAttr newArgOrResultAttrs(Operation *op, ArrayAttr originalAttrs,
-                              ArrayRef<Type> types) {
+Optional<ArrayAttr> newArgOrResultAttrs(Operation *op, ArrayAttr originalAttrs,
+                                        ArrayRef<Type> types) {
   if (!originalAttrs)
     return ArrayAttr();
 
@@ -361,7 +372,7 @@ ArrayAttr newArgOrResultAttrs(Operation *op, ArrayAttr originalAttrs,
     }
     if (!newAttr)
       return op->emitError("Could not get memref attr for arg ") << i,
-             ArrayAttr();
+             llvm::None;
     newArgAttrs.push_back(*newAttr);
   }
   return builder.getArrayAttr(newArgAttrs);
@@ -371,14 +382,22 @@ LogicalResult HIRPragma::visitOp(mlir::func::FuncOp op) {
   if (!op->hasAttr("hwAccel"))
     return success();
   Builder builder(op);
-  ArrayAttr newArgAttr = newArgOrResultAttrs(
+  auto newArgAttr = newArgOrResultAttrs(
       op, op->getAttrOfType<ArrayAttr>("arg_attrs"), op.getArgumentTypes());
-  if (newArgAttr)
-    op->setAttr("arg_attrs", newArgAttr);
-  ArrayAttr newResultAttr = newArgOrResultAttrs(
+  if (!newArgAttr.has_value())
+    return failure();
+  if (*newArgAttr)
+    op->setAttr("arg_attrs", *newArgAttr);
+  else if (op.isDeclaration())
+    return op->emitError("Could not find arg_attrs.");
+  auto newResultAttr = newArgOrResultAttrs(
       op, op->getAttrOfType<ArrayAttr>("res_attrs"), op.getArgumentTypes());
-  if (newResultAttr)
-    op->setAttr("res_attrs", newResultAttr);
+  if (!newResultAttr)
+    return failure();
+  if (*newResultAttr)
+    op->setAttr("res_attrs", *newResultAttr);
+  else if (op.isDeclaration() && op.getNumResults() > 0 && !*newResultAttr)
+    return op->emitError("Could not find res_attrs.");
   return success();
 }
 
@@ -420,7 +439,10 @@ LogicalResult HIRPragma::visitOp(mlir::AffineForOp op) {
   if (iiAttr) {
     op->setAttr("II", iiAttr);
     op->removeAttr("hls.PIPELINE_II");
+  } else {
+    op->emitRemark("No initiation interval specified.");
   }
+
   if (unrollAttr) {
     op->setAttr("UNROLL", unrollAttr);
     op->removeAttr("hls.UNROLL_FACTOR");
@@ -539,6 +561,8 @@ LogicalResult HIRPragma::visitArithFOp(Operation *operation) {
     opName = "sub_" + typeStr;
   else if (isa<mlir::arith::MulFOp>(operation))
     opName = "mul_" + typeStr;
+  else if (isa<mlir::arith::DivFOp>(operation))
+    opName = "div_" + typeStr;
   else
     return operation->emitError("Unknown arith operation.");
 
@@ -552,6 +576,7 @@ LogicalResult HIRPragma::visitArithFOp(Operation *operation) {
   auto arithCallOp = builder.create<mlir::func::CallOp>(
       operation->getLoc(), funcDecl, operation->getOperands());
   operation->replaceAllUsesWith(arithCallOp);
+  visitOp(arithCallOp);
   toErase.push_back(operation);
   return success();
 }
