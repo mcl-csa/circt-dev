@@ -234,6 +234,36 @@ else()
 endif()
 
 #-------------------------------------------------------------------------------
+# GLPK Configuration
+#-------------------------------------------------------------------------------
+
+# If glpk hasn't been explicitly disabled, find it.
+option(GLPK_DISABLE "Disable glpk.")
+if (GLPK_DISABLE)
+  message(STATUS "Disabling glpk.")
+else()
+  if (EXISTS ${GLPK_PATH})
+    get_filename_component(GLPK_PATH ${GLPK_PATH} DIRECTORY)
+    message(STATUS "Setting glpk path to ${GLPK_PATH}.")
+    link_directories(${GLPK_PATH})
+  else()
+    # Search for glpk library.
+    find_library(GLPK_PATH "glpk")
+    if(EXISTS ${GLPK_PATH})
+      # Then strip the filename.
+      get_filename_component(GLPK_PATH ${GLPK_PATH} DIRECTORY)
+      message(STATUS "Found glpk at ${GLPK_PATH}.")
+      # Add to the list of directories where linker will search.
+      link_directories(${GLPK_PATH})
+    else()
+      set(GLPK_PATH "")
+      message(STATUS "Did not find glpk.")
+    endif()
+  endif()
+endif()
+
+
+#-------------------------------------------------------------------------------
 # Vivado Configuration
 #-------------------------------------------------------------------------------
 
