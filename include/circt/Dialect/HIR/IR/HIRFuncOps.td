@@ -139,8 +139,8 @@ def CallOp : HIR_Op<"call",
   }];
 
   let arguments = (ins 
-      FlatSymbolRefAttr:$callee, 
       StrAttr:$instance_name,
+      FlatSymbolRefAttr:$callee, 
       TypeAttr: $funcTy,
       Variadic<AnyType>:$operands, 
       HIR_TimeType:$tstart,
@@ -148,7 +148,8 @@ def CallOp : HIR_Op<"call",
       );
   let results = (outs Variadic<AnyType> : $results);
 
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = [{ $instance_name $callee `(` $operands`)` `at` custom<TimeAndOffset>($tstart ,$offset) custom<WithSSANames>(attr-dict) 
+                            `:` custom<FunctionType>($funcTy, type($operands), type($results)) }];
   let hasCanonicalizeMethod = true;
   let hasVerifier = 1;
   let extraClassDeclaration=[{
@@ -178,50 +179,4 @@ def CallOp : HIR_Op<"call",
     /// Lookup the FuncOp/ExternalFuncOp for the callee. This returns null on invalid IR.
     Operation* getCalleeDecl() ;
   }];
-}
-
-def InstanceOp : HIR_Op<"instance",[]> {
-  let summary = "Instantiate a new function.";
-  let description = [{
-    This Op creates an instance of a function. All uses of the instance will share the same hardware and internal state. 
-      Example:
-
-      ```mlir 
-      %f = hir.instance @foo : !hir.func<(i32,!hir.memref<...>) -> (i32,i32 delay 1)>
-      ```
-  }];
-
-  let arguments = (ins 
-      FlatSymbolRefAttr:$callee, 
-      TypeAttr: $funcTy
-      );
-  let results = (outs HIR_FuncType : $result);
-
-  let assemblyFormat = [{ $callee custom<WithSSANames>(attr-dict) 
-                            `:` $funcTy custom<CopyType>(type($result),ref($funcTy))}];
-}
-
-def CallInstanceOp : HIR_Op<"call_instance",
-[DeclareOpInterfaceMethods<ScheduledOp>] > {
-  let summary = "Call an already instantiated function.";
-  let description = [{
-    This Op calls a previously instantiated function. 
-      Example:
-
-      ```mlir 
-      %a,%b = hir.call_instance %foo (%x,%A) at %ti : !hir.func<(i32,!hir.memref<...>) -> (i32,i32 delay 1)>
-      ```
-  }];
-
-  let arguments = (ins 
-      HIR_FuncType:$callee, 
-      TypeAttr: $funcTy,
-      Variadic<AnyType>:$operands, 
-      HIR_TimeType:$tstart,
-      I64Attr: $offset
-      );
-  let results = (outs Variadic<AnyType> : $results);
-
-  let assemblyFormat = [{ $callee `(` $operands`)` `at` custom<TimeAndOffset>($tstart ,$offset) custom<WithSSANames>(attr-dict) 
-                            `:` custom<FunctionType>($funcTy, type($operands), type($results)) custom<CopyType>(type($callee),ref($funcTy))}];
 }

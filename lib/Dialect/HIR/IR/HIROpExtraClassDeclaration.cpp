@@ -249,9 +249,7 @@ Optional<int64_t> ForOp::getInitiationInterval() {
 
 // ScheduledOp interface.
 hir::Time CallOp::getStartTime() { return hir::Time(tstart(), offset()); }
-hir::Time CallInstanceOp::getStartTime() {
-  return hir::Time(tstart(), offset());
-}
+
 hir::Time hir::ForOp::getStartTime() { return hir::Time(tstart(), offset()); }
 hir::Time hir::WhileOp::getStartTime() { return hir::Time(tstart(), offset()); }
 hir::Time hir::IsFirstIterOp::getStartTime() {
@@ -277,11 +275,7 @@ void CallOp::setStartTime(hir::Time time) {
   this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
                                     time.getOffset()));
 }
-void CallInstanceOp::setStartTime(hir::Time time) {
-  this->tstartMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
-}
+
 void ForOp::setStartTime(hir::Time time) {
   this->tstartMutable().assign(time.getTimeVar());
   this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
@@ -363,27 +357,6 @@ CallOp::getResultsWithTime() {
   return output;
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
-CallInstanceOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
-  auto funcTy = this->funcTy().dyn_cast<hir::FuncType>();
-  for (size_t i = 0; i < this->getNumResults(); i++) {
-    Value res = this->getResult(i);
-    Type resTy = res.getType();
-    if (helper::isBuiltinSizedType(resTy)) {
-      DictionaryAttr attrDict = funcTy.getResultAttrs()[i];
-      uint64_t delay = helper::extractDelayFromDict(attrDict).getValue();
-      Time time = this->getStartTime().addOffset(delay);
-      output.push_back(std::make_pair(res, time));
-    } else if (resTy.isa<TimeType>()) {
-      Time time = Time(res, 0);
-      output.push_back(std::make_pair(res, time));
-    } else {
-      llvm_unreachable("CallOp output should be a value type.");
-    }
-  }
-  return output;
-}
 SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
 ForOp::getResultsWithTime() {
   SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;

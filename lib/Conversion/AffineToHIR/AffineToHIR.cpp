@@ -318,6 +318,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::FuncOp op) {
   pushInsertionBlk(funcOp.getFuncBody().front());
   return success();
 }
+
 LogicalResult AffineToHIRImpl::visitOp(hir::ProbeOp op) {
   auto hirInputValue = valueConverter.getBlockLocalValue(
       builder, op.input(), builder.getInsertionBlock());
@@ -548,10 +549,12 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::CallOp op) {
   for (auto hirOperand : hirOperands) {
     operands.push_back(hirOperand.getValue());
   }
+
   auto callOp = builder.create<hir::CallOp>(
-      op->getLoc(), getHIRValueTypes(op->getResultTypes()), op.getCalleeAttr(),
-      builder.getStringAttr(op.getCalleeAttr().getValue()),
+      op->getLoc(), getHIRValueTypes(op->getResultTypes()),
+      builder.getStringAttr(op.getCalleeAttr().getValue()), op.getCalleeAttr(),
       hirFuncExternOp.funcTyAttr(), operands, tRegion, offsetAttr);
+
   assert(callOp->getNumResults() == op->getNumResults());
   auto resultDelays = op->getAttrOfType<ArrayAttr>("result_delays");
   if (!resultDelays && callOp->getNumResults() > 0) {
@@ -597,7 +600,7 @@ LogicalResult AffineToHIRImpl::visitFFIOp(Operation *operation) {
   }
   auto callOp = builder.create<hir::CallOp>(
       operation->getLoc(), getHIRValueTypes(operation->getResultTypes()),
-      hirFuncAttr, builder.getStringAttr(hirFuncAttr.getValue()),
+      builder.getStringAttr(hirFuncAttr.getValue()), hirFuncAttr,
       hirFuncExternOp.funcTyAttr(), operands, tRegion, offsetAttr);
   assert(callOp->getNumResults() == operation->getNumResults());
   auto resultDelays = operation->getAttrOfType<ArrayAttr>("result_delays");

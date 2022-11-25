@@ -437,7 +437,7 @@ LogicalResult MemrefLoweringPass::visitOp(hir::CallOp op) {
       hir::FuncType::get(builder.getContext(), inputTypes, inputAttrs,
                          funcTy.getResultTypes(), funcTy.getResultAttrs());
   auto newCallOp = builder.create<hir::CallOp>(
-      op.getLoc(), op.getResultTypes(), op.calleeAttr(), op.instance_nameAttr(),
+      op.getLoc(), op.getResultTypes(), op.instance_nameAttr(), op.calleeAttr(),
       TypeAttr::get(newFuncTy), operands, op.tstart(), op.offsetAttr());
   op.replaceAllUsesWith(newCallOp);
   opsToErase.push_back(op);

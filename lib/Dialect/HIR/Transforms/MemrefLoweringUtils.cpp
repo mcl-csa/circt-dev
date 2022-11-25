@@ -347,8 +347,8 @@ LogicalResult emitMemoryInstance(OpBuilder &builder, hir::MemrefType memrefTy,
                               : builder.getStringAttr(memName);
   auto calleeAttr = FlatSymbolRefAttr::get(builder.getContext(), memName);
   auto callOp = builder.create<hir::CallOp>(
-      builder.getUnknownLoc(), SmallVector<Type>(), calleeAttr,
-      instanceNameAttr, TypeAttr::get(funcTy), inputBuses, tstart,
+      builder.getUnknownLoc(), SmallVector<Type>(), instanceNameAttr,
+      calleeAttr, TypeAttr::get(funcTy), inputBuses, tstart,
       builder.getI64IntegerAttr(0));
 
   DictionaryAttr params;
