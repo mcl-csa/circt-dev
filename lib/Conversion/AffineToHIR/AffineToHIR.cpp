@@ -105,7 +105,7 @@ Value emitI64Expr(OpBuilder &builder, ArrayRef<HIRValue> i64Values,
                   int64_t destOfffset) {
 
   auto uLoc = builder.getUnknownLoc();
-  int64_t constCoeff = flattenedExprCoeffs.back();
+  int64_t const constCoeff = flattenedExprCoeffs.back();
   Value exprResult = builder.create<circt::hw::ConstantOp>(
       uLoc, builder.getI64IntegerAttr(constCoeff));
   for (size_t n = 0; n < i64Values.size(); n++) {
@@ -159,7 +159,7 @@ SmallVector<Value> AffineToHIRImpl::getFlattenedHIRIndices(
       }
     } else {
       int idxLoc = -1;
-      int64_t constCoeff = flattenedExprCoeffs.back();
+      int64_t const constCoeff = flattenedExprCoeffs.back();
       for (size_t loc = 0; loc < flattenedExprCoeffs.size(); loc++) {
         if (flattenedExprCoeffs[loc] != 0) {
           idxLoc = loc;
@@ -245,23 +245,23 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::FuncOp op) {
   SmallVector<Type> resultTypes;
   SmallVector<DictionaryAttr> resultAttrs;
   for (size_t i = 0; i < functionTy.getNumInputs(); i++) {
-    DictionaryAttr attr = getParamAttr(builder.getContext(), argAttrs, i);
+    DictionaryAttr const attr = getParamAttr(builder.getContext(), argAttrs, i);
     if (!attr)
       return op->emitError(
                  "affine-to-hir pass: Can't get Dictionary attribute for "
                  "input parameter ")
              << i << ".";
-    Type ty = getHIRType(functionTy.getInput(i), attr);
+    Type const ty = getHIRType(functionTy.getInput(i), attr);
     inputTypes.push_back(ty);
     inputAttrs.push_back(attr);
   }
   for (size_t i = 0; i < functionTy.getNumResults(); i++) {
-    DictionaryAttr attr = getParamAttr(builder.getContext(), resAttrs, i);
+    DictionaryAttr const attr = getParamAttr(builder.getContext(), resAttrs, i);
     if (!attr)
       return op->emitError("affine-to-hir pass: Can't convert attribute for "
                            "return parameter ")
              << i << ".";
-    Type ty = getHIRType(functionTy.getResult(i), attr);
+    Type const ty = getHIRType(functionTy.getResult(i), attr);
     resultTypes.push_back(ty);
     resultAttrs.push_back(attr);
   }
@@ -449,7 +449,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineStoreOp op) {
   auto port = builder.getI64IntegerAttr(portAndDelay.first);
   auto delay = builder.getI64IntegerAttr(portAndDelay.second);
 
-  int64_t offset = schedulingAnalysis->getTimeOffset(op);
+  int64_t const offset = schedulingAnalysis->getTimeOffset(op);
   auto offsetAttr = builder.getI64IntegerAttr(offset);
   auto tRegion = builder.getInsertionBlock()->getArguments().back();
   assert(tRegion);
@@ -514,7 +514,7 @@ MemKindEnumAttr toMemKindAttr(StringAttr memKindStrAttr) {
 }
 
 LogicalResult AffineToHIRImpl::visitOp(mlir::memref::AllocaOp op) {
-  DictionaryAttr attr = op->getAttrDictionary();
+  DictionaryAttr const attr = op->getAttrDictionary();
   auto memKindStrAttr = attr.getAs<StringAttr>("mem_kind");
   auto ports = helper::extractMemrefPortsFromDict(attr);
 
