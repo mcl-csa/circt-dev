@@ -71,7 +71,7 @@ MemrefPortInterface MemrefLoweringPass::defineBusesForMemrefPort(
                                           builder.getI1Type());
 
   size_t addrWidth = 0;
-  for (int64_t dimSize : memrefTy.filterShape(ADDR)) {
+  for (int64_t const dimSize : memrefTy.filterShape(ADDR)) {
     addrWidth += helper::clog2(dimSize);
   }
 
@@ -127,7 +127,7 @@ static void initUnconnectedMemoryInterface(OpBuilder &builder,
                                            MemoryInterface memoryInterface) {
   auto enTy = hir::BusType::get(builder.getContext(), builder.getI1Type());
   if (memoryInterface.hasAddrBus()) {
-    OpBuilder::InsertionGuard guard(builder);
+    OpBuilder::InsertionGuard const guard(builder);
     builder.setInsertionPoint(memoryInterface.getAddrEnBus().getDefiningOp());
     auto c0 = builder.create<hw::ConstantOp>(
         builder.getUnknownLoc(), IntegerAttr::get(builder.getI1Type(), 0));
@@ -136,7 +136,7 @@ static void initUnconnectedMemoryInterface(OpBuilder &builder,
             builder.create<hir::CastOp>(builder.getUnknownLoc(), enTy, c0));
   }
   if (memoryInterface.hasRdBus()) {
-    OpBuilder::InsertionGuard guard(builder);
+    OpBuilder::InsertionGuard const guard(builder);
     builder.setInsertionPoint(memoryInterface.getRdEnBus().getDefiningOp());
     auto c0 = builder.create<hw::ConstantOp>(
         builder.getUnknownLoc(), IntegerAttr::get(builder.getI1Type(), 0));
@@ -144,7 +144,7 @@ static void initUnconnectedMemoryInterface(OpBuilder &builder,
         builder.create<hir::CastOp>(builder.getUnknownLoc(), enTy, c0));
   }
   if (memoryInterface.hasWrBus()) {
-    OpBuilder::InsertionGuard guard(builder);
+    OpBuilder::InsertionGuard const guard(builder);
     builder.setInsertionPoint(memoryInterface.getWrEnBus().getDefiningOp());
     auto c0 = builder.create<hw::ConstantOp>(
         builder.getUnknownLoc(), IntegerAttr::get(builder.getI1Type(), 0));
@@ -177,27 +177,27 @@ size_t insertBusTypesAndAttrsForMemrefPort(
     DictionaryAttr portDict, MemrefPortInterface &portInterface) {
   auto *context = memrefTy.getContext();
   Builder builder(context);
-  Type enableTy = hir::BusTensorType::get(context, memrefTy.getNumBanks(),
-                                          IntegerType::get(context, 1));
+  Type const enableTy = hir::BusTensorType::get(context, memrefTy.getNumBanks(),
+                                                IntegerType::get(context, 1));
 
   size_t addrWidth = 0;
-  for (int64_t dimSize : memrefTy.filterShape(ADDR)) {
+  for (int64_t const dimSize : memrefTy.filterShape(ADDR)) {
     addrWidth += helper::clog2(dimSize);
   }
 
-  Type addrTy = hir::BusTensorType::get(context, memrefTy.getNumBanks(),
-                                        builder.getIntegerType(addrWidth));
-  Type dataTy = hir::BusTensorType::get(context, memrefTy.getNumBanks(),
-                                        memrefTy.getElementType());
+  Type const addrTy = hir::BusTensorType::get(
+      context, memrefTy.getNumBanks(), builder.getIntegerType(addrWidth));
+  Type const dataTy = hir::BusTensorType::get(context, memrefTy.getNumBanks(),
+                                              memrefTy.getElementType());
 
-  DictionaryAttr sendAttr = helper::getDictionaryAttr(
+  DictionaryAttr const sendAttr = helper::getDictionaryAttr(
       "hir.bus.ports",
       ArrayAttr::get(context, StringAttr::get(context, "send")));
-  DictionaryAttr recvAttr = helper::getDictionaryAttr(
+  DictionaryAttr const recvAttr = helper::getDictionaryAttr(
       "hir.bus.ports",
       ArrayAttr::get(context, StringAttr::get(context, "recv")));
 
-  std::string memName =
+  std::string const memName =
       inputNames[loc] + std::string("_p") + std::to_string(port);
   if (memrefTy.getNumElementsPerBank() > 1) {
     portInterface.addrEnableBusTensor =
@@ -281,7 +281,7 @@ void MemrefLoweringPass::insertBusArguments(hir::FuncLike op) {
 
   // insert new types to bb args and new attrs to inputAttrs.
   for (int i = bb.getNumArguments() - 2 /*last arg is timetype*/; i >= 0; i--) {
-    Value arg = bb.getArgument(i);
+    Value const arg = bb.getArgument(i);
     if (auto memrefTy = arg.getType().dyn_cast<hir::MemrefType>()) {
       auto ports =
           helper::extractMemrefPortsFromDict(funcTy.getInputAttrs()[i]);
@@ -311,9 +311,9 @@ void MemrefLoweringPass::insertBusArguments(hir::FuncLike op) {
 }
 
 void MemrefLoweringPass::removeMemrefArguments(hir::FuncLike op) {
-  OpBuilder builder(op);
+  OpBuilder const builder(op);
   auto funcTy = op.getFuncType();
-  SmallVector<Type> inputTypes;
+  SmallVector<Type> const inputTypes;
   SmallVector<DictionaryAttr> inputAttrs;
   auto &bb = op.getFuncBody().front();
   SmallVector<Attribute> inputNames;
@@ -355,7 +355,8 @@ LogicalResult MemrefLoweringPass::visitOp(hir::LoadOp op) {
   builder.setInsertionPoint(op);
 
   // Insert logic to send address and valid signals to address bus.
-  Value addr = createLinearAddr(builder, op.getLoc(), op.filterIndices(ADDR));
+  Value const addr =
+      createLinearAddr(builder, op.getLoc(), op.filterIndices(ADDR));
 
   if (memoryInterface->hasAddrBus() &&
       failed(memoryInterface->emitAddrSendLogic(builder, op.getLoc(), addr,
@@ -384,7 +385,8 @@ LogicalResult MemrefLoweringPass::visitOp(hir::StoreOp op) {
   builder.setInsertionPoint(op);
 
   // Insert logic to send address and valid signals to address bus.
-  Value addr = createLinearAddr(builder, op.getLoc(), op.filterIndices(ADDR));
+  Value const addr =
+      createLinearAddr(builder, op.getLoc(), op.filterIndices(ADDR));
 
   if (memoryInterface->hasAddrBus() &&
       failed(memoryInterface->emitAddrSendLogic(builder, op.getLoc(), addr,
@@ -538,25 +540,26 @@ LogicalResult MemrefLoweringPass::visitOp(hir::FuncOp funcOp) {
   topLevelBuilder = new OpBuilder(funcOp);
   topLevelBuilder->setInsertionPointToStart(&funcOp.body().front());
   insertBusArguments(funcOp);
-  WalkResult result = funcOp.walk([this](Operation *operation) -> WalkResult {
-    if (auto op = dyn_cast<hir::AllocaOp>(operation)) {
-      if (failed(visitOp(op)))
-        return WalkResult::interrupt();
-    } else if (auto op = dyn_cast<hir::MemrefExtractOp>(operation)) {
-      if (failed(visitOp(op)))
-        return WalkResult::interrupt();
-    } else if (auto op = dyn_cast<hir::LoadOp>(operation)) {
-      if (failed(visitOp(op)))
-        return WalkResult::interrupt();
-    } else if (auto op = dyn_cast<hir::StoreOp>(operation)) {
-      if (failed(visitOp(op)))
-        return WalkResult::interrupt();
-    } else if (auto op = dyn_cast<hir::CallOp>(operation)) {
-      if (failed(visitOp(op)))
-        return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
-  });
+  WalkResult const result =
+      funcOp.walk([this](Operation *operation) -> WalkResult {
+        if (auto op = dyn_cast<hir::AllocaOp>(operation)) {
+          if (failed(visitOp(op)))
+            return WalkResult::interrupt();
+        } else if (auto op = dyn_cast<hir::MemrefExtractOp>(operation)) {
+          if (failed(visitOp(op)))
+            return WalkResult::interrupt();
+        } else if (auto op = dyn_cast<hir::LoadOp>(operation)) {
+          if (failed(visitOp(op)))
+            return WalkResult::interrupt();
+        } else if (auto op = dyn_cast<hir::StoreOp>(operation)) {
+          if (failed(visitOp(op)))
+            return WalkResult::interrupt();
+        } else if (auto op = dyn_cast<hir::CallOp>(operation)) {
+          if (failed(visitOp(op)))
+            return WalkResult::interrupt();
+        }
+        return WalkResult::advance();
+      });
 
   if (result.wasInterrupted()) {
     return failure();
