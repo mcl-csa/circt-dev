@@ -117,7 +117,7 @@ SmallVector<SmallVector<MemoryInterface>> emitMemoryInterfacesForEachPortBank(
     OpBuilder &builder, hir::MemrefType memrefTy,
     SmallVector<MemrefPortInterface> memrefPortInterfaces) {
 
-  int64_t numBanks = memrefTy.getNumBanks();
+  int64_t const numBanks = memrefTy.getNumBanks();
   SmallVector<SmallVector<MemoryInterface>> mapPortBankToMemoryInterface;
 
   for (size_t port = 0; port < memrefPortInterfaces.size(); port++) {
@@ -305,7 +305,7 @@ LogicalResult emitMemoryInstance(OpBuilder &builder, hir::MemrefType memrefTy,
   SmallVector<DictionaryAttr> inputBusAttrs;
   SmallVector<Type> inputBusTypes;
   for (size_t port = 0; port < memoryInterfaces.size(); port++) {
-    std::string portPrefix = "p" + std::to_string(port) + "_";
+    std::string const portPrefix = "p" + std::to_string(port) + "_";
     auto memoryInterface = memoryInterfaces[port];
     if (memoryInterface.hasAddrBus()) {
       assert(memrefTy.getNumElementsPerBank() > 1);
@@ -340,8 +340,8 @@ LogicalResult emitMemoryInstance(OpBuilder &builder, hir::MemrefType memrefTy,
     }
   }
 
-  Type funcTy = hir::FuncType::get(builder.getContext(), inputBusTypes,
-                                   inputBusAttrs, {}, {});
+  Type const funcTy = hir::FuncType::get(builder.getContext(), inputBusTypes,
+                                         inputBusAttrs, {}, {});
   auto instanceNameAttr = instanceName
                               ? builder.getStringAttr(instanceName.getValue())
                               : builder.getStringAttr(memName);
