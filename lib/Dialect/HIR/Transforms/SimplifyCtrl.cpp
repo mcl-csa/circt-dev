@@ -12,6 +12,7 @@
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/SV/SVOps.h"
 #include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/Visitors.h"
 #include <iostream>
 using namespace circt;
 using namespace hir;
@@ -23,27 +24,43 @@ public:
 private:
   LogicalResult visitOp(ForOp);
   LogicalResult visitOp(IfOp);
+  llvm::SmallVector<Operation *> opsToErase;
+  void eraseOpsSafely();
+  bool isToBeErased(Operation *);
 };
 
+void SimplifyCtrlPass::eraseOpsSafely() {
+  for (auto *op : opsToErase)
+    op->erase();
+}
+bool SimplifyCtrlPass::isToBeErased(Operation *operation) {
+  for (auto *toErase : opsToErase)
+    if (operation == toErase)
+      return true;
+  return false;
+}
 void SimplifyCtrlPass::runOnOperation() {
   hir::FuncOp funcOp = getOperation();
-  WalkResult result = funcOp.walk([this](Operation *operation) -> WalkResult {
-    if (auto op = dyn_cast<hir::ForOp>(operation)) {
-      if (failed(visitOp(op)))
-        return WalkResult::interrupt();
-    }
-    if (auto op = dyn_cast<hir::IfOp>(operation)) {
-      if (failed(visitOp(op)))
-        return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
-  });
+  WalkResult const result = funcOp.walk<mlir::WalkOrder::PostOrder>(
+      [this](Operation *operation) -> WalkResult {
+        if (auto op = dyn_cast<hir::ForOp>(operation)) {
+          if (failed(visitOp(op)))
+            return WalkResult::interrupt();
+        }
+        if (auto op = dyn_cast<hir::IfOp>(operation)) {
+          if (failed(visitOp(op)))
+            return WalkResult::interrupt();
+        }
+        return WalkResult::advance();
+      });
 
   if (result.wasInterrupted()) {
     signalPassFailure();
     return;
   }
+  eraseOpsSafely();
 }
+
 /// Convert ForOp into a WhileOp.
 LogicalResult SimplifyCtrlPass::visitOp(ForOp forOp) {
   // The condition var = cmpi "ult",lb,ub: i4.
@@ -71,7 +88,7 @@ LogicalResult SimplifyCtrlPass::visitOp(ForOp forOp) {
   whileOp.addEntryBlock();
   builder.setInsertionPointToStart(whileOp.getBody(0));
 
-  Value isFirstIter = builder.create<hir::IsFirstIterOp>(
+  Value const isFirstIter = builder.create<hir::IsFirstIterOp>(
       builder.getUnknownLoc(), builder.getI1Type(), whileOp.getIterTimeVar(),
       builder.getI64IntegerAttr(0));
 
@@ -104,6 +121,8 @@ LogicalResult SimplifyCtrlPass::visitOp(ForOp forOp) {
           builder.getUnknownLoc(), condition, mappedIterArgs,
           operandMap.lookup(nextIterOp.tstart()), nextIterOp.offsetAttr());
     } else {
+      if (isToBeErased(&operation))
+        continue;
       builder.clone(operation, operandMap);
     }
   }
@@ -111,7 +130,7 @@ LogicalResult SimplifyCtrlPass::visitOp(ForOp forOp) {
   if (auto attr = forOp->getAttrOfType<ArrayAttr>("names"))
     whileOp->setAttr("names", attr);
   forOp.replaceAllUsesWith((Operation *)whileOp);
-  forOp.erase();
+  opsToErase.push_back(forOp);
   return success();
 }
 
@@ -205,7 +224,7 @@ LogicalResult SimplifyCtrlPass::visitOp(IfOp op) {
         builder.getUnknownLoc(), ifResults[i].getType(), op.condition(),
         ifResults[i], elseResults[i]));
   }
-  op.erase();
+  opsToErase.push_back(op);
   return success();
 }
 

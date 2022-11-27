@@ -41,7 +41,7 @@ private:
 private:
   MemrefInfo memrefInfo;
   SmallVector<Operation *, 10> opsToErase;
-  OpBuilder *topLevelBuilder;
+  Optional<OpBuilder> topLevelBuilder;
 };
 } // end anonymous namespace
 
@@ -537,7 +537,7 @@ LogicalResult MemrefLoweringPass::visitOp(hir::MemrefExtractOp op) {
 }
 
 LogicalResult MemrefLoweringPass::visitOp(hir::FuncOp funcOp) {
-  topLevelBuilder = new OpBuilder(funcOp);
+  topLevelBuilder = OpBuilder(funcOp);
   topLevelBuilder->setInsertionPointToStart(&funcOp.body().front());
   insertBusArguments(funcOp);
   WalkResult const result =
