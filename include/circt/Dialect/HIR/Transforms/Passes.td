@@ -48,6 +48,14 @@ def VerifySchedule : Pass<"hir-verify-schedule", "hir::FuncOp"> {
   let constructor = "circt::hir::createVerifySchedulePass()";
 }
 
+def OpFusion : Pass<"hir-fuse-op", "hir::FuncOp"> {
+  let summary = "Fuse ops";
+  let description = [{fuses function calls to resuse resources such as multipliers.
+  }];
+
+  let constructor = "circt::hir::createOpFusionPass()";
+}
+
 def LoopUnroll : Pass<"hir-loop-unroll", "hir::FuncOp"> {
   let summary = "Unroll loop body";
   let description = [{This pass unrolls the body of the UnrollForOp and removes

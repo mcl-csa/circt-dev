@@ -1,6 +1,6 @@
-//=========- LoopUnrollPass.cpp - Canonicalize varius instructions---===//
+//=========- LoopUnrollPass.cpp - Unroll loops---===//
 //
-// This file implements the HIR canonicalization pass.
+// This file implements the HIR loop unrolling.
 //
 //===----------------------------------------------------------------------===//
 
@@ -9,6 +9,7 @@
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "mlir/IR/BlockAndValueMapping.h"
+#include <string>
 
 using namespace circt;
 namespace {
@@ -32,9 +33,9 @@ LogicalResult unrollLoopFull(hir::ForOp forOp) {
   if (failed(helper::isConstantIntValue(forOp.step())))
     return forOp.emitError("Expected step to be constant.");
 
-  int64_t lb = helper::getConstantIntValue(forOp.lb()).getValue();
-  int64_t ub = helper::getConstantIntValue(forOp.ub()).getValue();
-  int64_t step = helper::getConstantIntValue(forOp.step()).getValue();
+  int64_t const lb = helper::getConstantIntValue(forOp.lb()).getValue();
+  int64_t const ub = helper::getConstantIntValue(forOp.ub()).getValue();
+  int64_t const step = helper::getConstantIntValue(forOp.step()).getValue();
 
   auto *context = builder.getContext();
   assert(forOp.offset() == 0);
@@ -54,7 +55,7 @@ LogicalResult unrollLoopFull(hir::ForOp forOp) {
     // Populate the operandMap.
     BlockAndValueMapping operandMap;
     for (size_t i = 0; i < forOp.iter_args().size(); i++) {
-      Value regionIterArg = loopBodyBlock.getArgument(i);
+      Value const regionIterArg = loopBodyBlock.getArgument(i);
       operandMap.map(regionIterArg, mappedIterArgs[i]);
     }
     operandMap.map(forOp.getIterTimeVar(), mappedIterTimeVar);
@@ -75,10 +76,20 @@ LogicalResult unrollLoopFull(hir::ForOp forOp) {
         builder.create<hir::ProbeOp>(
             probeOp.getLoc(), operandMap.lookup(probeOp.input()), unrolledName);
       } else {
-        builder.clone(operation, operandMap);
+        auto *newOperation = builder.clone(operation, operandMap);
+        // If its a CallOp then change the instance name. Otherwise it will get
+        // fused during the op fusion pass. Ops across iterations of an unrolled
+        // loop are not fused together.
+        if (auto callOp = dyn_cast<hir::CallOp>(operation)) {
+          auto instanceName =
+              callOp.instance_name().str() + "_" + std::to_string(i);
+          newOperation->setAttr("instance_name",
+                                builder.getStringAttr(instanceName));
+        }
       }
     }
   }
+
   assert(forOp.iter_args().size() == forOp.iterResults().size());
   // replace the ForOp results.
   forOp.t_end().replaceAllUsesWith(mappedIterTimeVar);
@@ -91,7 +102,7 @@ LogicalResult unrollLoopFull(hir::ForOp forOp) {
 
 void LoopUnrollPass::runOnOperation() {
   hir::FuncOp funcOp = getOperation();
-  WalkResult result = funcOp.walk([](Operation *operation) -> WalkResult {
+  WalkResult const result = funcOp.walk([](Operation *operation) -> WalkResult {
     if (auto forOp = dyn_cast<hir::ForOp>(operation)) {
       if (forOp->getAttr("unroll") ||
           forOp.getInductionVar().getType().isa<mlir::IndexType>())

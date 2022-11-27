@@ -23,6 +23,7 @@ std::unique_ptr<OperationPass<hir::FuncOp>> createSimplifyCtrlPass();
 std::unique_ptr<OperationPass<mlir::ModuleOp>> createMemrefLoweringPass();
 std::unique_ptr<OperationPass<hir::FuncOp>> createVerifySchedulePass();
 std::unique_ptr<OperationPass<hir::FuncOp>> createLoopUnrollPass();
+std::unique_ptr<OperationPass<hir::FuncOp>> createOpFusionPass();
 
 void registerPassPipelines();
 void initHIRTransformationPasses();
