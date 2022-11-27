@@ -34,14 +34,14 @@ FuncToHWModulePortMap getHWModulePortMap(OpBuilder &builder,
                                          ArrayAttr inputNames,
                                          ArrayAttr resultNames);
 void copyHIRAttrs(hir::CallOp, hw::InstanceOp);
-Operation *getConstantX(OpBuilder *, Type);
+Operation *getConstantX(OpBuilder &, Type);
 Operation *
-getConstantXArray(OpBuilder *builder, Type hwTy,
+getConstantXArray(OpBuilder &builder, Type hwTy,
                   DenseMap<Value, SmallVector<Value>> &mapArrayToElements);
 
 ArrayAttr getHWParams(Attribute, bool ignoreValues = false);
 
-Value getDelayedValue(OpBuilder *builder, Value input, int64_t delay,
+Value getDelayedValue(OpBuilder &builder, Value input, int64_t delay,
                       Optional<StringRef> name, Location loc, Value clk,
                       Value reset);
 

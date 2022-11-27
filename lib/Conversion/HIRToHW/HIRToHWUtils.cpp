@@ -11,9 +11,9 @@ void FuncToHWModulePortMap::addFuncInput(StringAttr name,
   assert((direction == hw::PortDirection::INPUT) ||
          (direction == hw::PortDirection::OUTPUT));
 
-  size_t argNum = (direction == hw::PortDirection::INPUT)
-                      ? (hwModuleInputArgNum++)
-                      : (hwModuleResultArgNum++);
+  size_t const argNum = (direction == hw::PortDirection::INPUT)
+                            ? (hwModuleInputArgNum++)
+                            : (hwModuleResultArgNum++);
 
   portInfoList.push_back(
       {.name = name, .direction = direction, .type = type, .argNum = argNum});
@@ -124,13 +124,15 @@ FuncToHWModulePortMap getHWModulePortMap(OpBuilder &builder,
 }
 
 void copyHIRAttrs(hir::CallOp srcOp, hw::InstanceOp destOp) {
-  if (auto attr = srcOp->getAttr("hir_attrs")) {
+  if (destOp->hasAttr("hir_attrs"))
+    return;
+
+  if (auto attr = srcOp->getAttr("hir_attrs"))
     destOp->setAttr("hir_attrs", attr);
-  }
 }
 
 Operation *
-getConstantXArray(OpBuilder *builder, Type hirTy,
+getConstantXArray(OpBuilder &builder, Type hirTy,
                   DenseMap<Value, SmallVector<Value>> &mapArrayToElements) {
   assert(hirTy.isa<hir::BusTensorType>());
   auto hwTy = *helper::convertToHWType(hirTy);
@@ -141,22 +143,22 @@ getConstantXArray(OpBuilder *builder, Type hirTy,
   }
   SmallVector<Value> constXCopies;
   for (uint64_t i = 0; i < hwArrayTy.getSize(); i++) {
-    Value constXValue =
-        getConstantX(builder, hir::BusType::get(builder->getContext(),
+    Value const constXValue =
+        getConstantX(builder, hir::BusType::get(builder.getContext(),
                                                 hwArrayTy.getElementType()))
             ->getResult(0);
     constXCopies.push_back(constXValue);
   }
-  auto arrOp = builder->create<hw::ArrayCreateOp>(builder->getUnknownLoc(),
-                                                  constXCopies);
+  auto arrOp =
+      builder.create<hw::ArrayCreateOp>(builder.getUnknownLoc(), constXCopies);
   mapArrayToElements[arrOp.getResult()] = constXCopies;
   return arrOp;
 }
 
-Operation *getConstantX(OpBuilder *builder, Type hirTy) {
+Operation *getConstantX(OpBuilder &builder, Type hirTy) {
   auto hwTy = *helper::convertToHWType(hirTy);
   assert(hwTy.isa<IntegerType>());
-  return builder->create<sv::ConstantXOp>(builder->getUnknownLoc(), hwTy);
+  return builder.create<sv::ConstantXOp>(builder.getUnknownLoc(), hwTy);
 }
 
 ArrayAttr getHWParams(Attribute paramsAttr, bool ignoreValues) {
@@ -179,12 +181,12 @@ ArrayAttr getHWParams(Attribute paramsAttr, bool ignoreValues) {
   return ArrayAttr::get(builder.getContext(), hwParams);
 }
 
-Value getDelayedValue(OpBuilder *builder, Value input, int64_t delay,
+Value getDelayedValue(OpBuilder &builder, Value input, int64_t delay,
                       Optional<StringRef> name, Location loc, Value clk,
                       Value reset) {
   assert(input.getType().isa<mlir::IntegerType>() ||
          input.getType().isa<hw::ArrayType>());
-  auto nameAttr = name ? builder->getStringAttr(name.getValue()) : StringAttr();
+  auto nameAttr = name ? builder.getStringAttr(name.getValue()) : StringAttr();
 
   Type regTy;
   if (delay > 1)
@@ -193,53 +195,53 @@ Value getDelayedValue(OpBuilder *builder, Value input, int64_t delay,
     regTy = input.getType();
 
   auto reg =
-      builder->create<sv::RegOp>(builder->getUnknownLoc(), regTy, nameAttr);
+      builder.create<sv::RegOp>(builder.getUnknownLoc(), regTy, nameAttr);
 
   auto regOutput =
-      builder->create<sv::ReadInOutOp>(builder->getUnknownLoc(), reg);
+      builder.create<sv::ReadInOutOp>(builder.getUnknownLoc(), reg);
 
   Value regInput;
   if (delay > 1) {
     auto c0 =
-        helper::materializeIntegerConstant(*builder, 0, helper::clog2(delay));
+        helper::materializeIntegerConstant(builder, 0, helper::clog2(delay));
     auto sliceTy = hw::ArrayType::get(input.getType(), delay - 1);
-    auto regSlice = builder->create<hw::ArraySliceOp>(builder->getUnknownLoc(),
-                                                      sliceTy, regOutput, c0);
-    regInput = builder->create<hw::ArrayConcatOp>(
-        builder->getUnknownLoc(),
-        ArrayRef<Value>({regSlice, builder->create<hw::ArrayCreateOp>(
-                                       builder->getUnknownLoc(), input)}));
+    auto regSlice = builder.create<hw::ArraySliceOp>(builder.getUnknownLoc(),
+                                                     sliceTy, regOutput, c0);
+    regInput = builder.create<hw::ArrayConcatOp>(
+        builder.getUnknownLoc(),
+        ArrayRef<Value>({regSlice, builder.create<hw::ArrayCreateOp>(
+                                       builder.getUnknownLoc(), input)}));
   } else {
     regInput = input;
   }
-  auto bodyCtor = [builder, &reg, &regInput] {
-    builder->create<sv::PAssignOp>(builder->getUnknownLoc(), reg.getResult(),
-                                   regInput);
+  auto bodyCtor = [&builder, &reg, &regInput] {
+    builder.create<sv::PAssignOp>(builder.getUnknownLoc(), reg.getResult(),
+                                  regInput);
   };
   Value regResetValue;
-  auto zeroBit = builder->create<hw::ConstantOp>(
-      builder->getUnknownLoc(), IntegerAttr::get(input.getType(), 0));
+  auto zeroBit = builder.create<hw::ConstantOp>(
+      builder.getUnknownLoc(), IntegerAttr::get(input.getType(), 0));
   if (delay > 1)
-    regResetValue = builder->create<hw::ArrayCreateOp>(
-        builder->getUnknownLoc(), SmallVector<Value>(delay, zeroBit));
+    regResetValue = builder.create<hw::ArrayCreateOp>(
+        builder.getUnknownLoc(), SmallVector<Value>(delay, zeroBit));
   else
     regResetValue = zeroBit;
 
-  auto resetCtor = [builder, &reg, &regResetValue] {
-    builder->create<sv::PAssignOp>(builder->getUnknownLoc(), reg.getResult(),
-                                   regResetValue);
+  auto resetCtor = [&builder, &reg, &regResetValue] {
+    builder.create<sv::PAssignOp>(builder.getUnknownLoc(), reg.getResult(),
+                                  regResetValue);
   };
 
-  builder->create<sv::AlwaysFFOp>(
-      builder->getUnknownLoc(), sv::EventControl::AtPosEdge, clk,
+  builder.create<sv::AlwaysFFOp>(
+      builder.getUnknownLoc(), sv::EventControl::AtPosEdge, clk,
       ResetType::SyncReset, sv::EventControl::AtPosEdge, reset, bodyCtor,
       resetCtor);
 
   Value output;
   if (delay > 1) {
-    auto cEnd = helper::materializeIntegerConstant(*builder, delay - 1,
+    auto cEnd = helper::materializeIntegerConstant(builder, delay - 1,
                                                    helper::clog2(delay));
-    output = builder->create<hw::ArrayGetOp>(loc, regOutput, cEnd).getResult();
+    output = builder.create<hw::ArrayGetOp>(loc, regOutput, cEnd).getResult();
   } else {
     output = regOutput;
   }

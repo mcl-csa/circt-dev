@@ -7,6 +7,7 @@
 #include "../PassDetail.h"
 #include "HIRToHWUtils.h"
 #include "circt/Dialect/HIR/IR/helper.h"
+#include "circt/Dialect/HW/HWOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include <iostream>
@@ -53,10 +54,14 @@ private:
   LogicalResult visitRegion(mlir::Region &);
 
 private:
-  Operation *getEmittedHWModuleOp(StringRef hwModuleName);
+  Operation *getEmittedHWModuleOp(StringRef);
+  hw::InstanceOp getOrCreateHWInstanceOp(Location loc, Operation *hwModuleOp,
+                                         StringRef instanceName,
+                                         ArrayRef<Value> hwInputs,
+                                         ArrayAttr hwParams, Value tstart);
 
 private:
-  OpBuilder *builder;
+  Optional<OpBuilder> builder;
   HIRToHWMapping mapHIRToHWValue;
   llvm::DenseMap<StringRef, uint64_t> mapFuncNameToInstanceCount;
   Value clk;
@@ -66,7 +71,16 @@ private:
   size_t uniqueInt = 0;
   DenseMap<Value, SmallVector<Value>> mapArrayToElements;
   DenseMap<StringRef, Operation *> mapNameToHWModuleOp;
+  DenseMap<StringRef, hw::InstanceOp> mapNameToHWInstanceOp;
 };
+
+Value emitMux(OpBuilder &builder, Value select, Value t, Value f) {
+  auto combinedArrayOfValues = builder.create<hw::ArrayCreateOp>(
+      builder.getUnknownLoc(), SmallVector<Value>({t, f}));
+
+  return builder.create<hw::ArrayGetOp>(builder.getUnknownLoc(),
+                                        combinedArrayOfValues, select);
+}
 
 LogicalResult HIRToHWPass::visitOp(hir::BusMapOp op) {
   SmallVector<Value> hwOperands;
@@ -90,10 +104,32 @@ Operation *HIRToHWPass::getEmittedHWModuleOp(StringRef hwModuleName) {
   return hwModuleExternOp;
 }
 
+hw::InstanceOp HIRToHWPass::getOrCreateHWInstanceOp(
+    Location loc, Operation *hwModuleOp, StringRef instanceName,
+    ArrayRef<Value> hwInputs, ArrayAttr hwParams, Value tstart) {
+  auto it = mapNameToHWInstanceOp.find(instanceName);
+  // If the instance has not been previously generated then create a new
+  // instance.
+  if (it == mapNameToHWInstanceOp.end()) {
+    auto instanceOp = builder->create<hw::InstanceOp>(
+        loc, hwModuleOp, instanceName, hwInputs, hwParams, StringAttr());
+    mapNameToHWInstanceOp[instanceName] = instanceOp;
+    return instanceOp;
+  }
+  auto instanceOp = it->getSecond();
+  assert(instanceOp->getOperands().size() == hwInputs.size());
+  // Replace all the prev inputs of the op with mux of hwInputs and prev inputs;
+  for (size_t i = 0; i < hwInputs.size(); i++) {
+    auto &opOperand = instanceOp->getOpOperand(i);
+    opOperand.set(emitMux(*builder, tstart, hwInputs[i], opOperand.get()));
+  }
+  return it->getSecond();
+}
+
 LogicalResult HIRToHWPass::visitOp(hir::BusOp op) {
   // Add a placeholder SSA Var for the buses. CallOp visit will replace them.
   // We need to do this because HW dialect does not have SSA dominance.
-  auto *constantXOp = getConstantX(builder, op.getType());
+  auto *constantXOp = getConstantX(*builder, op.getType());
   auto placeHolderSSAVar = constantXOp->getResult(0);
   auto name = helper::getOptionalName(constantXOp, 0);
   if (name)
@@ -145,7 +181,7 @@ LogicalResult HIRToHWPass::visitOp(hir::BusTensorMapOp op) {
 
 LogicalResult HIRToHWPass::visitOp(hir::BusTensorOp op) {
   auto *constantXOp =
-      getConstantXArray(builder, op.getType(), mapArrayToElements);
+      getConstantXArray(*builder, op.getType(), mapArrayToElements);
   auto placeHolderSSAVar = constantXOp->getResult(0);
   auto name = helper::getOptionalName(constantXOp, 0);
   if (name)
@@ -177,7 +213,8 @@ LogicalResult HIRToHWPass::visitOp(hir::CallOp op) {
   }
   assert(op.offset() == 0);
 
-  hwInputs.push_back(mapHIRToHWValue.lookup(op.tstart()));
+  Value const tstart = mapHIRToHWValue.lookup(op.tstart());
+  hwInputs.push_back(tstart);
   hwInputs.push_back(this->clk);
   hwInputs.push_back(this->reset);
 
@@ -194,18 +231,12 @@ LogicalResult HIRToHWPass::visitOp(hir::CallOp op) {
   for (auto ty : op.getResultTypes())
     hwResultTypes.push_back(*helper::convertToHWType(ty));
 
-  auto instanceName =
-      op.instance_nameAttr()
-          ? op.instance_nameAttr()
-          : builder->getStringAttr(
-                op.callee().str() + "_inst" +
-                std::to_string(mapFuncNameToInstanceCount[op.callee()]++));
-
+  auto instanceName = op.instance_nameAttr();
+  assert(instanceName);
   auto *calleeHWModule = getEmittedHWModuleOp(op.callee());
-  hw::InstanceOp instanceOp;
-  instanceOp = builder->create<hw::InstanceOp>(
+  hw::InstanceOp instanceOp = getOrCreateHWInstanceOp(
       op.getLoc(), calleeHWModule, instanceName, hwInputs,
-      getHWParams(op->getAttr("params")), StringAttr());
+      getHWParams(op->getAttr("params")), tstart);
   copyHIRAttrs(op, instanceOp);
 
   // Map callop input send buses to the results of the instance op and replace
@@ -253,8 +284,9 @@ LogicalResult HIRToHWPass::visitOp(hir::TimeOp op) {
     return tIn.getDefiningOp()->emitError()
            << "Expected converted type to be i1.";
   auto name = helper::getOptionalName(op, 0);
-  Value res = getDelayedValue(builder, tIn, op.getStartTime().getOffset(), name,
-                              op.getLoc(), clk, reset);
+  Value const res =
+      getDelayedValue(*builder, tIn, op.getStartTime().getOffset(), name,
+                      op.getLoc(), clk, reset);
   assert(res.getType().isa<mlir::IntegerType>());
   mapHIRToHWValue.map(op.res(), res);
   return success();
@@ -277,15 +309,15 @@ LogicalResult HIRToHWPass::visitOp(hir::WhileOp op) {
 
   // Placeholder values.
   auto tstartNextIterOp =
-      getConstantX(builder, builder->getI1Type())->getResult(0);
+      getConstantX(*builder, builder->getI1Type())->getResult(0);
   auto conditionNextIterOp =
-      getConstantX(builder, builder->getI1Type())->getResult(0);
+      getConstantX(*builder, builder->getI1Type())->getResult(0);
 
   auto tNextBegin = builder->create<comb::AndOp>(builder->getUnknownLoc(),
                                                  tstartBegin, conditionBegin);
   auto tNextIter = builder->create<comb::AndOp>(
       builder->getUnknownLoc(), tstartNextIterOp, conditionNextIterOp);
-  Value iterTimeVar =
+  Value const iterTimeVar =
       builder->create<comb::OrOp>(op.getLoc(), tNextBegin, tNextIter);
   auto notConditionBegin = builder->create<comb::XorOp>(
       builder->getUnknownLoc(), conditionBegin, conditionTrue);
@@ -304,7 +336,7 @@ LogicalResult HIRToHWPass::visitOp(hir::WhileOp op) {
   for (size_t i = 0; i < op.iter_args().size(); i++) {
     auto iterArg = op.iter_args()[i];
     auto backwardIterArg =
-        getConstantX(builder, iterArg.getType())->getResult(0);
+        getConstantX(*builder, iterArg.getType())->getResult(0);
     placeholderIterArgs.push_back(backwardIterArg);
     auto forwardIterArg = mapHIRToHWValue.lookup(iterArg);
     mapHIRToHWValue.map(op.body().front().getArgument(i),
@@ -392,7 +424,7 @@ LogicalResult HIRToHWPass::visitOp(hir::ReturnOp op) {
   }
 
   // Insert the hir.func outputs.
-  for (Value funcResult : op.operands()) {
+  for (Value const funcResult : op.operands()) {
     hwOutputs.push_back(mapHIRToHWValue.lookup(funcResult));
   }
 
@@ -416,21 +448,12 @@ LogicalResult HIRToHWPass::visitOp(hir::BusSendOp op) {
     defaultValue = builder->create<hw::ConstantOp>(
         builder->getUnknownLoc(), defaultAttr.dyn_cast<IntegerAttr>());
   } else {
-    defaultValue = getConstantX(builder, value.getType())->getResult(0);
+    defaultValue = getConstantX(*builder, value.getType())->getResult(0);
   }
   auto newBus = builder->create<comb::MuxOp>(
       builder->getUnknownLoc(), value.getType(), tstart, value, defaultValue);
   mapHIRToHWValue.replaceAllHWUses(placeHolderBus, newBus);
   return success();
-}
-
-Value instantiateBusSelectLogic(OpBuilder &builder, Value selectBus,
-                                Value trueBus, Value falseBus) {
-  auto combinedArrayOfValues = builder.create<hw::ArrayCreateOp>(
-      builder.getUnknownLoc(), SmallVector<Value>({trueBus, falseBus}));
-
-  return builder.create<hw::ArrayGetOp>(builder.getUnknownLoc(),
-                                        combinedArrayOfValues, selectBus);
 }
 
 LogicalResult HIRToHWPass::visitOp(hir::FuncExternOp op) {
@@ -460,10 +483,10 @@ void HIRToHWPass::updateHIRToHWMapForFuncInputs(
       if (funcArgs[i].getType().isa<hir::BusType>())
         mapHIRToHWValue.map(
             funcArgs[i],
-            getConstantX(builder, funcArgs[i].getType())->getResult(0));
+            getConstantX(*builder, funcArgs[i].getType())->getResult(0));
       else if (funcArgs[i].getType().isa<hir::BusTensorType>())
         mapHIRToHWValue.map(funcArgs[i],
-                            getConstantXArray(builder, funcArgs[i].getType(),
+                            getConstantXArray(*builder, funcArgs[i].getType(),
                                               mapArrayToElements)
                                 ->getResult(0));
       else
@@ -481,7 +504,7 @@ LogicalResult HIRToHWPass::visitOp(hir::FuncOp op) {
   this->hwModuleOp = builder->create<hw::HWModuleOp>(op.getLoc(), name,
                                                      portMap.getPortInfoList());
   mapNameToHWModuleOp[op.getName()] = hwModuleOp;
-  OpBuilder::InsertionGuard guard(*this->builder);
+  OpBuilder::InsertionGuard const guard(*this->builder);
   this->builder->setInsertionPointToStart(hwModuleOp.getBodyBlock());
 
   updateHIRToHWMapForFuncInputs(
@@ -656,7 +679,7 @@ LogicalResult HIRToHWPass::visitOp(hir::BusBroadcastOp op) {
 LogicalResult HIRToHWPass::visitOp(hir::DelayOp op) {
   auto input = mapHIRToHWValue.lookup(op.input());
   auto name = helper::getOptionalName(op, 0);
-  mapHIRToHWValue.map(op.res(), getDelayedValue(builder, input, op.delay(),
+  mapHIRToHWValue.map(op.res(), getDelayedValue(*builder, input, op.delay(),
                                                 name, op.getLoc(), clk, reset));
   return success();
 }
@@ -734,9 +757,9 @@ LogicalResult HIRToHWPass::visitOperation(Operation *operation) {
 
 void HIRToHWPass::runOnOperation() {
   this->mlirModuleOp = getOperation();
-  this->builder = new OpBuilder(mlirModuleOp.getLoc().getContext());
+  this->builder = OpBuilder(mlirModuleOp.getLoc().getContext());
   this->builder->setInsertionPointToStart(mlirModuleOp.getBody(0));
-  WalkResult result =
+  WalkResult const result =
       mlirModuleOp.walk([this](Operation *operation) -> WalkResult {
         if (auto op = dyn_cast<hir::FuncOp>(operation)) {
           if (failed(visitOp(op)))
