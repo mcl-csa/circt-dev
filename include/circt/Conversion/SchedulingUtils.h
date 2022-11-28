@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <string>
 
-using namespace mlir;
 struct RowVarInfo {
   std::string name;
   int boundKind;
@@ -25,50 +24,52 @@ struct ColumnVarInfo {
   int objectiveCoeff;
 };
 struct SSADependence {
-  SSADependence(Operation *destOp, Value value, int64_t delay)
+  SSADependence(mlir::Operation *destOp, mlir::Value value, int64_t delay)
       : destOp(destOp), value(value), delay(delay) {}
 
 private:
-  Operation *destOp;
-  Value value;
+  mlir::Operation *destOp;
+  mlir::Value value;
   int64_t delay;
 
 public:
   bool srcIsRegionArg() { return value.getDefiningOp() == NULL; }
-  Operation *getSrcOp() {
+  mlir::Operation *getSrcOp() {
     auto *op = value.getDefiningOp();
     assert(op);
     return op;
   }
-  Operation *getDestOp() { return destOp; }
+  mlir::Operation *getDestOp() { return destOp; }
   int64_t getMinimumDelay() { return delay; }
-  Value getSSAVar() { return value; }
+  mlir::Value getSSAVar() { return value; }
 };
 
 // Helper functions.
-int getLoopII(AffineForOp affineForOp);
+int getLoopII(mlir::AffineForOp affineForOp);
 
-Value getMemrefFromAffineLoadOrStoreOp(Operation *operation);
+mlir::Value getMemrefFromAffineLoadOrStoreOp(mlir::Operation *operation);
 
-int64_t getMemOpSafeDelay(Operation *operation,
-                          DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr);
+int64_t getMemOpSafeDelay(
+    mlir::Operation *operation,
+    mlir::DenseMap<mlir::Value, mlir::ArrayAttr> &mapMemrefToPortsAttr);
 
-llvm::Optional<int64_t> getResultDelay(OpResult v);
+llvm::Optional<int64_t> getResultDelay(mlir::OpResult v);
 
 void populateMemrefToPortsAttrMapping(
     mlir::func::FuncOp funcOp,
-    llvm::DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr);
+    llvm::DenseMap<mlir::Value, mlir::ArrayAttr> &mapMemrefToPortsAttr);
 
-LogicalResult populateSSADependences(mlir::func::FuncOp funcOp,
-                                     SmallVector<SSADependence> &SSADependence);
+mlir::LogicalResult
+populateSSADependences(mlir::func::FuncOp funcOp,
+                       mlir::SmallVector<SSADependence> &ssaDependence);
 
 /// This class is a general base class for all ILP problems.
 class ILPHandler {
 public:
-  ILPHandler(const char *ilpName, int optKind, std::string &logFile);
+  ILPHandler(const char *ilpName, int optKind, const std::string &logFile);
   void incrObjectiveCoeff(int columnNum, int valueToIncr);
   void addColumnVar(int boundKind, int lb, int ub, int objectiveCoeff = 0);
-  void addRow(ArrayRef<int> rowCoeffs, int boundKind, int lb, int ub);
+  void addRow(mlir::ArrayRef<int> rowCoeffs, int boundKind, int lb, int ub);
   llvm::Optional<int64_t> solve();
   void dumpInput();
   void dumpResult();
@@ -76,11 +77,11 @@ public:
   int64_t getColVarValue(int64_t col);
 
 private:
-  SmallVector<ColumnVarInfo> columnVars;
-  SmallVector<RowVarInfo> rowVars;
-  SmallVector<int, 4> ia;
-  SmallVector<int, 4> ja;
-  SmallVector<double, 4> ar;
+  mlir::SmallVector<ColumnVarInfo> columnVars;
+  mlir::SmallVector<RowVarInfo> rowVars;
+  mlir::SmallVector<int, 4> ia;
+  mlir::SmallVector<int, 4> ja;
+  mlir::SmallVector<double, 4> ar;
   std::string ilpName;
   int optKind;
   glp_prob *mip;
@@ -92,17 +93,17 @@ public:
 /// OpInfo contains the list of parent loop initiation intervals and their
 /// induction vars.
 struct OpInfo {
-  OpInfo(Operation *operation, int staticPos);
+  OpInfo(mlir::Operation *operation, int staticPos);
   OpInfo() { staticPos = -1; }
-  Operation *getOperation();
-  ArrayRef<AffineForOp> getParentLoops();
-  ArrayRef<Value> getParentLoopIVs();
+  mlir::Operation *getOperation();
+  mlir::ArrayRef<mlir::AffineForOp> getParentLoops();
+  mlir::ArrayRef<mlir::Value> getParentLoopIVs();
   int getStaticPosition();
 
 private:
-  SmallVector<AffineForOp> parentLoops;
-  SmallVector<Value> parentLoopIVs;
-  Operation *operation;
+  mlir::SmallVector<mlir::AffineForOp> parentLoops;
+  mlir::SmallVector<mlir::Value> parentLoopIVs;
+  mlir::Operation *operation;
   int staticPos; // Represents the position of this op in the code. Used to
   // figure out if one op occurs before another in the static
   // order & to uniquely identify the static op.
@@ -121,10 +122,11 @@ public:
   llvm::Optional<int64_t> calculateSlack();
 
 private:
-  int64_t insertRowCoefficients(SmallVectorImpl<int> &rowCoeffVec,
-                                ArrayRef<int64_t> coeffs,
-                                OperandRange memIndices,
-                                ArrayRef<Value> loopIVs, bool isNegativeCoeff);
+  int64_t insertRowCoefficients(mlir::SmallVectorImpl<int> &rowCoeffVec,
+                                mlir::ArrayRef<int64_t> coeffs,
+                                mlir::OperandRange memIndices,
+                                mlir::ArrayRef<mlir::Value> loopIVs,
+                                bool isNegativeCoeff);
   void addILPColumns();
   void addHappensBeforeConstraintRow();
   void addMemoryConstraintILPRows();
@@ -139,31 +141,33 @@ private:
 // and the minimum delays between def and use.
 class SchedulingILPHandler : ILPHandler {
 public:
-  SchedulingILPHandler(const SmallVector<Operation *> operations,
-                       const llvm::DenseMap<std::pair<Operation *, Operation *>,
-                                            std::pair<int64_t, int64_t>>
-                           &mapMemoryDependenceToSlackAndDelay,
-                       const SmallVector<SSADependence> &SSADependence,
-                       llvm::DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr,
-                       std::string &logFile);
+  SchedulingILPHandler(
+      const mlir::SmallVector<mlir::Operation *> operations,
+      const llvm::DenseMap<std::pair<mlir::Operation *, mlir::Operation *>,
+                           std::pair<int64_t, int64_t>>
+          &mapMemoryDependenceToSlackAndDelay,
+      const mlir::SmallVector<SSADependence> &ssaDependence,
+      llvm::DenseMap<mlir::Value, mlir::ArrayAttr> &mapMemrefToPortsAttr,
+      const std::string &logFile);
   void addILPColumns(llvm::raw_fd_ostream &);
   void addMemoryDependenceRows();
   void addSSADependenceRows();
   void addMaxTimeOffsetRows();
-  llvm ::Optional<DenseMap<Operation *, int64_t>> getSchedule();
-  llvm::DenseMap<Operation *, std::pair<int64_t, int64_t>> getPortAssignments();
+  llvm ::Optional<mlir::DenseMap<mlir::Operation *, int64_t>> getSchedule();
+  llvm::DenseMap<mlir::Operation *, std::pair<int64_t, int64_t>>
+  getPortAssignments();
 
 private:
-  const SmallVector<Operation *> operations;
-  const llvm::DenseMap<std::pair<Operation *, Operation *>,
+  const mlir::SmallVector<mlir::Operation *> operations;
+  const llvm::DenseMap<std::pair<mlir::Operation *, mlir::Operation *>,
                        std::pair<int64_t, int64_t>>
       &mapMemoryDependenceToSlackAndDelay;
-  const SmallVector<SSADependence> ssaDependences;
-  llvm::DenseMap<Value, ArrayAttr> mapMemrefToPortsAttr;
-  llvm::DenseMap<Operation *, size_t> mapOperationToCol;
+  const mlir::SmallVector<SSADependence> ssaDependences;
+  llvm::DenseMap<mlir::Value, mlir::ArrayAttr> mapMemrefToPortsAttr;
+  llvm::DenseMap<mlir::Operation *, size_t> mapOperationToCol;
   // Pre-specified value for time variables.
   // FIXME: Implement this.
-  llvm::DenseMap<Operation *, Optional<int64_t>>
+  llvm::DenseMap<mlir::Operation *, llvm::Optional<int64_t>>
       mapOperationToPreSpecifiedSchedule;
 };
 #endif

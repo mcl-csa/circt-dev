@@ -32,6 +32,27 @@ def HIRPragma : Pass<"hir-pragma","mlir::ModuleOp"> {
 
 }
 
+//===----------------------------------------------------------------------===//
+// AutoAffineToHIR
+//===----------------------------------------------------------------------===//
+
+def AutoAffineToHIR : Pass<"auto-affine-to-hir","mlir::ModuleOp"> {
+  let summary = "Convert Affine dialect to HIR dialect with autotuning.";
+  let description = [{
+    This pass converts affine dialect to hir while calculating initiation
+    interval and schedule for improved op fusion.
+  }];
+  let constructor = "circt::createAutoAffineToHIRPass()";
+  let dependentDialects = [
+    "circt::hir::HIRDialect",
+    "circt::hw::HWDialect",
+    "circt::comb::CombDialect"
+  ];
+  let options = [
+    Option<"dbg", "dbg", "bool","", "Enable debug print to stdout.">
+   ];
+}
+
 
 //===----------------------------------------------------------------------===//
 // AffineToHIR

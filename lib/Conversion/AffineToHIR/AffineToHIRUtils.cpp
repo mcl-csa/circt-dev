@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "../PassDetail.h"
-#include "AffineToHIRUtils.h"
 #include "circt/Conversion/AffineToHIR.h"
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
@@ -76,7 +75,7 @@ ArrayRef<Value> BlockArgManager::getCapturedValues(Block *blk) {
   return mapBlockToCapturedValues[blk];
 }
 
-//FIXME: Use DenseSet instead of this function.
+// FIXME: Use DenseSet instead of this function.
 void insertIfNotPresent(SmallVectorImpl<Value> &array, Value value) {
   bool alreadyPresent = false;
   for (auto v : array) {
@@ -111,8 +110,10 @@ HIRValue ValueConverter::getBlockLocalValue(OpBuilder &builder, Value mlirValue,
   return iter->second;
 }
 
-HIRValue ValueConverter::getDelayedBlockLocalValue(OpBuilder &builder, Value mlirValue,
-                                            Value timeVar, int64_t offset) {
+HIRValue ValueConverter::getDelayedBlockLocalValue(OpBuilder &builder,
+                                                   Value mlirValue,
+                                                   Value timeVar,
+                                                   int64_t offset) {
   assert(mlirValue.getType().isIntOrIndexOrFloat());
   assert(timeVar);
   auto *blk = timeVar.getParentBlock();

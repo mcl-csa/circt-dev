@@ -1,4 +1,5 @@
 add_circt_library(CIRCTAffineToHIR
+  AutoAffineToHIRPass.cpp
   AffineToHIR.cpp
   AffineToHIRUtils.cpp
   SchedulingAnalysis.cpp 
@@ -14,4 +15,5 @@ add_circt_library(CIRCTAffineToHIR
   CIRCTScheduling
   CIRCTSchedulingAnalysis
   CIRCTHIR
-  )
+  CIRCTHIRAnalysis
+)

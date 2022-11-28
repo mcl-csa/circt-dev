@@ -15,6 +15,7 @@
 
 #include "circt/Conversion/AffineToHIR.h"
 #include "circt/Conversion/AffineToStaticLogic.h"
+#include "circt/Conversion/AutoAffineToHIRPass.h"
 #include "circt/Conversion/CalyxToFSM.h"
 #include "circt/Conversion/CalyxToHW.h"
 #include "circt/Conversion/CombToLLVM.h"

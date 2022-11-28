@@ -14,7 +14,6 @@
 #include <string>
 using namespace circt;
 namespace {
-
 struct AccessInfo {
   Value timeVar;
   int64_t startTime;

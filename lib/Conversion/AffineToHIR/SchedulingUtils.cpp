@@ -1,4 +1,4 @@
-#include "SchedulingUtils.h"
+#include "circt/Conversion/SchedulingUtils.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "circt/Dialect/HIR/IR/helper.h"
@@ -9,6 +9,7 @@
 #include "llvm/Support/FileSystem.h"
 #include <cstdint>
 #include <tuple>
+using namespace mlir;
 using namespace circt;
 // Local functions.
 llvm::Optional<int>
@@ -146,7 +147,7 @@ populateSSADependences(mlir::func::FuncOp funcOp,
   funcOp.walk([&ssaDependences](Operation *operation) {
     if (isa<arith::ConstantOp, mlir::memref::AllocaOp>(operation))
       return WalkResult::advance();
-    for (OpResult result : operation->getResults()) {
+    for (OpResult const result : operation->getResults()) {
       assert(!result.getType().isa<MemRefType>());
       auto delay = getResultDelay(result);
       if (!delay.hasValue()) {
@@ -161,7 +162,7 @@ populateSSADependences(mlir::func::FuncOp funcOp,
       }
     }
     for (auto &region : operation->getRegions()) {
-      for (Value regionArg : region.getArguments()) {
+      for (Value const regionArg : region.getArguments()) {
         if (regionArg.getType().isa<mlir::MemRefType>())
           continue;
         for (auto *user : regionArg.getUsers()) {
@@ -178,7 +179,8 @@ populateSSADependences(mlir::func::FuncOp funcOp,
 //-----------------------------------------------------------------------------
 // ILPHandler methods.
 //-----------------------------------------------------------------------------
-ILPHandler::ILPHandler(const char *ilpName, int optKind, std::string &logFile)
+ILPHandler::ILPHandler(const char *ilpName, int optKind,
+                       const std::string &logFile)
     : ilpName(ilpName), optKind(optKind), mip(NULL), logFile(logFile) {
   ar.push_back(-1);
   ia.push_back(-1);
@@ -190,24 +192,16 @@ void ILPHandler::addRow(ArrayRef<int> rowCoeffs, int boundKind, int lb,
   assert(boundKind == GLP_DB || lb == ub);
   assert(rowCoeffs.size() == columnVars.size() &&
          "Wrong number of row coefficients.");
-  size_t numNonZeroCoeffs = 0;
   for (size_t j = 0; j < rowCoeffs.size(); j++) {
     auto coeff = rowCoeffs[j];
     if (coeff != 0) {
-      numNonZeroCoeffs++;
       ia.push_back(rowVars.size() + 1);
       ja.push_back(j + 1);
       ar.push_back((double)coeff);
     }
   }
-  // if (numNonZeroCoeffs == 0) {
-  //  if (boundKind != GLP_UP)
-  //    assert(lb <= 0);
-  //  if (boundKind != GLP_LO)
-  //    assert(ub >= 0);
-  //  return;
-  //}
-  std::string name = "r" + std::to_string(rowVars.size() + 1);
+
+  std::string const name = "r" + std::to_string(rowVars.size() + 1);
   rowVars.push_back({.name = name, .boundKind = boundKind, .lb = lb, .ub = ub});
 }
 void ILPHandler::incrObjectiveCoeff(int columnNum, int valueToIncr) {
@@ -218,7 +212,7 @@ void ILPHandler::addColumnVar(int boundKind, int lb, int ub, int objCoeff) {
   assert(rowVars.size() == 0 &&
          "All columns must be added before adding rows.");
 
-  std::string name = "c" + std::to_string(columnVars.size() + 1);
+  std::string const name = "c" + std::to_string(columnVars.size() + 1);
   columnVars.push_back({.name = name,
                         .boundKind = boundKind,
                         .lb = lb,
@@ -354,7 +348,7 @@ int64_t MemoryDependenceILPHandler::insertRowCoefficients(
          coeffs.size() -
              1); // coeffs contains the constant as well as the last element.
   int64_t accumulatedLowerBounds = 0;
-  for (Value iv : loopIVs) {
+  for (Value const iv : loopIVs) {
     auto bounds = getConstantLoopBounds(iv);
     int coeff = 0;
     auto loc = findLocInArray(iv, memIndices);
@@ -400,7 +394,7 @@ void MemoryDependenceILPHandler::addMemoryConstraintILPRows() {
 
   auto fromAffineExprs = fromMemAccessMap.getResults();
   auto toAffineExprs = toMemAccessMap.getResults();
-  size_t numRows = fromAffineExprs.size();
+  size_t const numRows = fromAffineExprs.size();
 
   assert(toAffineExprs.size() == numRows);
 
@@ -449,7 +443,8 @@ void MemoryDependenceILPHandler::addHappensBeforeConstraintRow() {
   if (toInfo.getOperation() == fromInfo.getOperation())
     assert(toInfo.getStaticPosition() == fromInfo.getStaticPosition());
 
-  int staticDist = toInfo.getStaticPosition() - fromInfo.getStaticPosition();
+  int const staticDist =
+      toInfo.getStaticPosition() - fromInfo.getStaticPosition();
   SmallVector<int> commonIVCoeffs;
   auto destIVs = toInfo.getParentLoopIVs();
   auto srcIVs = fromInfo.getParentLoopIVs();
@@ -505,7 +500,7 @@ SchedulingILPHandler::SchedulingILPHandler(
         &mapMemoryDependenceToSlackAndDelay,
     const SmallVector<SSADependence> &ssaDependences,
     llvm::DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr,
-    std::string &logFile)
+    const std::string &logFile)
     : ILPHandler("SchedulingILP", GLP_MIN, logFile), operations(operations),
       mapMemoryDependenceToSlackAndDelay(mapMemoryDependenceToSlackAndDelay),
       ssaDependences(ssaDependences),
@@ -535,7 +530,7 @@ void setRowCoeffsOfOpAndItsParents(
     DenseMap<Operation *, size_t> &mapOperationToCol, Operation *operation,
     int coeffValue) {
   while (!isa<mlir::func::FuncOp>(operation)) {
-    int loc = mapOperationToCol[operation] - 1;
+    int const loc = mapOperationToCol[operation] - 1;
     rowCoeffs[loc] += coeffValue;
     operation = operation->getParentOp();
   }
@@ -560,13 +555,13 @@ void SchedulingILPHandler::addSSADependenceRows() {
     if (!dep.srcIsRegionArg()) {
       Operation *srcOp = dep.getSrcOp();
       assert(srcOp->getParentRegion() == destOp->getParentRegion());
-      int srcOpCol = mapOperationToCol[srcOp] - 1;
+      int const srcOpCol = mapOperationToCol[srcOp] - 1;
       rowCoeffs[srcOpCol] -= 1;
       incrObjectiveCoeff(srcOpCol, -1);
     }
 
-    int64_t delay = dep.getMinimumDelay();
-    int destOpCol = mapOperationToCol[destOp] - 1;
+    int64_t const delay = dep.getMinimumDelay();
+    int const destOpCol = mapOperationToCol[destOp] - 1;
     rowCoeffs[destOpCol] = 1;
     // FIXME: Instead of '1', we should use width of the ssa var for the cost of
     // the delayOp.
@@ -629,7 +624,7 @@ SchedulingILPHandler::getPortAssignments() {
     } else {
       continue;
     }
-    ArrayAttr ports = mapMemrefToPortsAttr[mem];
+    ArrayAttr const ports = mapMemrefToPortsAttr[mem];
     if (!ports) {
       emitError(mem.getLoc()) << "Could not find the ports for this memref.";
       assert(ports);

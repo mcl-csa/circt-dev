@@ -1,10 +1,10 @@
-#include "SchedulingAnalysis.h"
+#include "circt/Conversion/SchedulingAnalysis.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 //-----------------------------------------------------------------------------
 // class OpInfo methods.
 //-----------------------------------------------------------------------------
-
+using namespace mlir;
 OpInfo::OpInfo(Operation *operation, int staticPos)
     : operation(operation), staticPos(staticPos) {
   auto *currentOperation = operation;
@@ -24,8 +24,16 @@ ArrayRef<Value> OpInfo::getParentLoopIVs() { return parentLoopIVs; }
 // class SchedulingAnalysis methods.
 //-----------------------------------------------------------------------------
 SchedulingAnalysis::SchedulingAnalysis(Operation *operation,
-                                       std::string &logFile)
+                                       const std::string &logFile)
     : funcOp(dyn_cast<mlir::func::FuncOp>(operation)), logFile(logFile) {
+  // FIXME: SchedulingAnalysis should be able to handle arbitrary regions, not
+  // just funcOp.
+  // FIXME: We should not require an early exit even if for a declaration.
+  if (funcOp.isDeclaration()) {
+    this->schedule = llvm::DenseMap<Operation *, int64_t>();
+    return;
+  }
+
   std::error_code ec;
   llvm::raw_fd_ostream os(logFile, ec);
   os << "----------------------------------------------------------------------"

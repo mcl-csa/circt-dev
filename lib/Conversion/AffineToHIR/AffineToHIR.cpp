@@ -8,8 +8,6 @@
 
 #include "circt/Conversion/AffineToHIR.h"
 #include "../PassDetail.h"
-#include "AffineToHIRUtils.h"
-#include "SchedulingAnalysis.h"
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
@@ -31,7 +29,6 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include <iostream>
-#include <stack>
 
 using namespace mlir;
 using namespace circt;
@@ -41,43 +38,6 @@ namespace {
 
 struct AffineToHIR : public AffineToHIRBase<AffineToHIR> {
   void runOnOperation() override;
-};
-
-class AffineToHIRImpl {
-public:
-  AffineToHIRImpl(mlir::func::FuncOp funcOp, bool dbg)
-      : mlirFuncOp(funcOp), builder(funcOp), blkArgManager(funcOp), dbg(dbg) {}
-  void runOnOperation();
-
-private:
-  void pushInsertionBlk(Block &);
-  void popInsertionBlk();
-  SmallVector<Value> getFlattenedHIRIndices(OperandRange, AffineMap,
-                                            hir::MemrefType, Value, int64_t);
-
-private:
-  LogicalResult visitOperation(Operation *);
-  LogicalResult visitOp(mlir::func::FuncOp);
-  LogicalResult visitOp(hir::ProbeOp);
-  LogicalResult visitOp(mlir::func::ReturnOp);
-  LogicalResult visitOp(mlir::AffineForOp);
-  LogicalResult visitOp(mlir::AffineLoadOp);
-  LogicalResult visitOp(mlir::AffineStoreOp);
-  LogicalResult visitOp(mlir::AffineYieldOp);
-  LogicalResult visitOp(mlir::arith::ConstantOp);
-  LogicalResult visitOp(mlir::memref::AllocaOp);
-  LogicalResult visitOp(mlir::func::CallOp);
-  LogicalResult visitFFIOp(Operation *);
-
-private:
-  mlir::func::FuncOp mlirFuncOp;
-  OpBuilder builder;
-  std::unique_ptr<SchedulingAnalysis> schedulingAnalysis;
-  BlockArgManager blkArgManager;
-  ValueConverter valueConverter;
-  std::stack<OpBuilder::InsertionGuard> insertionGuards;
-  llvm::DenseMap<std::pair<Value, Region *>, Value> mapValueToRegionArg;
-  bool dbg;
 };
 
 } // namespace
@@ -361,7 +321,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineForOp op) {
   auto offsetAttr = builder.getI64IntegerAttr(offset);
 
   auto capturedValues =
-      blkArgManager.getCapturedValues(op.getInductionVar().getParentBlock());
+      blkArgManager->getCapturedValues(op.getInductionVar().getParentBlock());
   SmallVector<Value> iterArgOperands;
   SmallVector<Value> mlirNonConstantValues;
   SmallVector<Value> mlirConstantValues;
@@ -555,6 +515,10 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::CallOp op) {
       builder.getStringAttr(op.getCalleeAttr().getValue()), op.getCalleeAttr(),
       hirFuncExternOp.funcTyAttr(), operands, tRegion, offsetAttr);
 
+  for (auto attr : op->getAttrs()) {
+    if (isa_and_nonnull<hir::HIRDialect>(attr.getNameDialect()))
+      callOp->setAttr(attr.getName(), attr.getValue());
+  }
   assert(callOp->getNumResults() == op->getNumResults());
   auto resultDelays = op->getAttrOfType<ArrayAttr>("result_delays");
   if (!resultDelays && callOp->getNumResults() > 0) {
@@ -653,18 +617,22 @@ void AffineToHIRImpl::runOnOperation() {
   if (this->dbg)
     logFile = "/dev/stdout";
 
-  if (!mlirFuncOp.isDeclaration()) {
-    schedulingAnalysis = std::make_unique<SchedulingAnalysis>(
-        SchedulingAnalysis(mlirFuncOp, logFile));
-    if (!schedulingAnalysis->hasSolution()) {
-      mlirFuncOp->emitError("Failed to find a schedule.");
-      return;
+  getOperation().walk([this, logFile](Operation *operation) {
+    if (auto funcOp = dyn_cast<mlir::func::FuncOp>(operation)) {
+      schedulingAnalysis = std::make_unique<SchedulingAnalysis>(
+          SchedulingAnalysis(funcOp, logFile));
+      blkArgManager = BlockArgManager(funcOp);
+      if (funcOp->getAttr("hwAccel")) {
+        funcOp.walk<WalkOrder::PreOrder>([this](Operation *operation) {
+          if (failed(visitOperation(operation))) {
+            return WalkResult::interrupt();
+          }
+          return WalkResult::advance();
+        });
+      }
+      funcOp->erase();
     }
-  }
-  mlirFuncOp.walk<WalkOrder::PreOrder>([this](Operation *operation) {
-    if (failed(visitOperation(operation))) {
-      return WalkResult::interrupt();
-    }
+
     return WalkResult::advance();
   });
 }
@@ -673,27 +641,8 @@ void AffineToHIRImpl::runOnOperation() {
 // AffineToHIR methods.
 //-----------------------------------------------------------------------------
 void AffineToHIR::runOnOperation() {
-  getOperation()->walk([this](Operation *operation) {
-    if (auto funcOp = dyn_cast<mlir::func::FuncOp>(operation))
-      if (funcOp->getAttr("hwAccel") && funcOp.isDeclaration()) {
-        AffineToHIRImpl impl(funcOp, this->dbg);
-        impl.runOnOperation();
-        funcOp->erase();
-      }
-
-    return WalkResult::advance();
-  });
-
-  getOperation()->walk([this](Operation *operation) {
-    if (auto funcOp = dyn_cast<mlir::func::FuncOp>(operation)) {
-      if (funcOp->getAttr("hwAccel")) {
-        AffineToHIRImpl impl(funcOp, this->dbg);
-        impl.runOnOperation();
-      }
-      funcOp->erase();
-    }
-    return WalkResult::advance();
-  });
+  AffineToHIRImpl impl(this->getOperation(), this->dbg);
+  impl.runOnOperation();
 }
 //-----------------------------------------------------------------------------
 

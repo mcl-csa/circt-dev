@@ -3,7 +3,6 @@
 
 #include "SchedulingUtils.h"
 
-
 /// This class calculates the schedule (time offset) of all operations such that
 /// the provided target loop II do not cause a dependence or resource violation.
 ///
@@ -15,28 +14,27 @@
 class SchedulingILPHandler;
 class SchedulingAnalysis {
 public:
-  SchedulingAnalysis(Operation *operation, std::string &logFile);
+  SchedulingAnalysis(mlir::Operation *operation, const std::string &logFile);
   bool hasSolution();
-  int64_t getTimeOffset(Operation *);
-  std::pair<int64_t, int64_t> getPortNumAndDelayForMemoryOp(Operation *);
-  int64_t getLoopII(AffineForOp);
+  int64_t getTimeOffset(mlir::Operation *);
+  std::pair<int64_t, int64_t> getPortNumAndDelayForMemoryOp(mlir::Operation *);
+  int64_t getLoopII(mlir::AffineForOp);
 
 private:
   void initOperationInfo();
   void initSlackAndDelayForMemoryDependencies(
-      DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr);
+      mlir::DenseMap<mlir::Value, mlir::ArrayAttr> &mapMemrefToPortsAttr);
 
 private:
-  llvm::DenseMap<Operation *, OpInfo> mapOperationToInfo;
-  llvm::DenseMap<std::pair<Operation *, Operation *>,
+  llvm::DenseMap<mlir::Operation *, OpInfo> mapOperationToInfo;
+  llvm::DenseMap<std::pair<mlir::Operation *, mlir::Operation *>,
                  std::pair<int64_t, int64_t>>
       mapMemoryDependenceToSlackAndDelay;
-  SmallVector<SSADependence>
-      ssaDependences;
+  llvm::SmallVector<SSADependence> ssaDependences;
   mlir::func::FuncOp funcOp;
-  SmallVector<Operation *> operations;
-  llvm::Optional<llvm::DenseMap<Operation *, int64_t>> schedule;
-  llvm::DenseMap<Operation *, std::pair<int64_t, int64_t>>
+  llvm::SmallVector<mlir::Operation *> operations;
+  llvm::Optional<llvm::DenseMap<mlir::Operation *, int64_t>> schedule;
+  llvm::DenseMap<mlir::Operation *, std::pair<int64_t, int64_t>>
       mapOperationToPortNumAndDelay;
   std::string logFile;
 };
