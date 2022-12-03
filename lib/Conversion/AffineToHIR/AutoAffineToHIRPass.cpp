@@ -45,10 +45,35 @@
 using namespace circt;
 namespace {
 struct AutoAffineToHIRPass : public AutoAffineToHIRBase<AutoAffineToHIRPass> {
+public:
   void runOnOperation() override;
 
 private:
+private:
   llvm::DenseMap<StringRef, mlir::func::CallOp> mapLabelToCallOp;
+};
+
+struct FusionGroup {
+  FusionGroup(size_t ii) : numOps(0) { opsToFuse.append(ii, llvm::None); }
+  LogicalResult insert(std::pair<StringRef, AccessInfo> op) {
+    int64_t const ii = (int64_t)opsToFuse.size();
+    assert(op.second.minII >= ii && op.second.minII % ii == 0);
+    int64_t const position = op.second.startTime % ii;
+    if (opsToFuse[position].has_value())
+      return failure();
+    opsToFuse[position] = op.first;
+    numOps++;
+    return success();
+  }
+  int64_t getNumSlots() { return opsToFuse.size() - numOps; }
+
+private:
+  int64_t numOps;
+  llvm::SmallVector<Optional<StringRef>, 4> opsToFuse;
+};
+
+struct OpFusionHandler {
+  OpFusionHandler(llvm::DenseMap<StringRef, AccessInfo> mapLabelToAccessInfo);
 };
 } // namespace
 
@@ -94,6 +119,7 @@ void AutoAffineToHIRPass::runOnOperation() {
     OpFusionAnalysis opFusionAnalysis(op);
     opFusionAnalysis.getAnalysis(mapLabelToAccessInfo);
   });
+
   for (auto it : mapLabelToAccessInfo) {
     mapLabelToCallOp[it.getFirst()]->setAttr("access_info",
                                              it.getSecond().intoAttr(builder));
