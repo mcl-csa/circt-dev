@@ -8,6 +8,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include <cstdint>
 #include <string>
+#include <variant>
 
 struct RowVarInfo {
   std::string name;
@@ -136,6 +137,34 @@ private:
   OpInfo toInfo;
 };
 
+/// Specify module scheduling constraint.
+/// Ensures that (destOp.time -srcOp.time)%n = r
+/// Where srcOp.time is the time when srcOp is executed first time.
+struct ModuloSchedulingConstraint {
+  ModuloSchedulingConstraint(mlir::Operation *srcOp, mlir::Operation *destOp,
+                             unsigned int n, unsigned int r)
+      : srcOp(srcOp), destOp(destOp), n(n), r(r) {
+    assert(srcOp != destOp);
+  }
+
+  mlir::Operation *srcOp;
+  mlir::Operation *destOp;
+  int64_t n, r;
+};
+
+struct MinSchedulingConstraint {
+  MinSchedulingConstraint(mlir::Operation *srcOp, mlir::Operation *destOp,
+                          unsigned int minDelay)
+      : srcOp(srcOp), destOp(destOp), minDelay(minDelay) {
+    assert(srcOp != destOp);
+  }
+
+  mlir::Operation *srcOp;
+  mlir::Operation *destOp;
+  int64_t minDelay;
+};
+typedef std::variant<ModuloSchedulingConstraint, MinSchedulingConstraint>
+    SchedulingConstraint;
 /// This class calculates the final schedule given the slack between memory
 /// ops
 // and the minimum delays between def and use.
@@ -148,6 +177,7 @@ public:
           &mapMemoryDependenceToSlackAndDelay,
       const mlir::SmallVector<SSADependence> &ssaDependence,
       llvm::DenseMap<mlir::Value, mlir::ArrayAttr> &mapMemrefToPortsAttr,
+      const llvm::SmallVector<SchedulingConstraint> &schedulingConstraints,
       const std::string &logFile);
   void addILPColumns(llvm::raw_fd_ostream &);
   void addMemoryDependenceRows();
@@ -165,9 +195,8 @@ private:
   const mlir::SmallVector<SSADependence> ssaDependences;
   llvm::DenseMap<mlir::Value, mlir::ArrayAttr> mapMemrefToPortsAttr;
   llvm::DenseMap<mlir::Operation *, size_t> mapOperationToCol;
-  // Pre-specified value for time variables.
   // FIXME: Implement this.
-  llvm::DenseMap<mlir::Operation *, llvm::Optional<int64_t>>
-      mapOperationToPreSpecifiedSchedule;
+  const llvm::SmallVector<SchedulingConstraint> schedulingConstraints;
+  int64_t maxTimeCol;
 };
 #endif

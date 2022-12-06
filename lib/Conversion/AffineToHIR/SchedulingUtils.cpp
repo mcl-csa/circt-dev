@@ -500,11 +500,13 @@ SchedulingILPHandler::SchedulingILPHandler(
         &mapMemoryDependenceToSlackAndDelay,
     const SmallVector<SSADependence> &ssaDependences,
     llvm::DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr,
+    const llvm::SmallVector<SchedulingConstraint> &schedulingConstraints,
     const std::string &logFile)
     : ILPHandler("SchedulingILP", GLP_MIN, logFile), operations(operations),
       mapMemoryDependenceToSlackAndDelay(mapMemoryDependenceToSlackAndDelay),
       ssaDependences(ssaDependences),
-      mapMemrefToPortsAttr(mapMemrefToPortsAttr) {}
+      mapMemrefToPortsAttr(mapMemrefToPortsAttr),
+      schedulingConstraints(schedulingConstraints) {}
 
 void SchedulingILPHandler::addILPColumns(llvm::raw_fd_ostream &os) {
   size_t col = 1;
@@ -521,8 +523,10 @@ void SchedulingILPHandler::addILPColumns(llvm::raw_fd_ostream &os) {
     // os << "\n";
     col += 1;
   }
+
   // This column corresponds to the max of all time-vars i.e. the total latency.\
   // It contributes to the objective (to minimize the overall latency).
+  maxTimeCol = col;
   addColumnVar(GLP_LO, 0, 0, /*objective coeff*/ 1);
 }
 void setRowCoeffsOfOpAndItsParents(
@@ -574,11 +578,12 @@ void SchedulingILPHandler::addSSADependenceRows() {
   }
 }
 
+/// Ensure that the maxTime variable is the upper bound of all variables.
 void SchedulingILPHandler::addMaxTimeOffsetRows() {
-  for (int i = 0; i < getNumCols() - 1; i++) {
+  for (auto it : mapOperationToCol) {
     SmallVector<int> rowCoeffs(getNumCols(), 0);
-    rowCoeffs[rowCoeffs.size() - 1] = 1;
-    rowCoeffs[i] -= 1;
+    rowCoeffs[maxTimeCol - 1] = 1;
+    rowCoeffs[it.getSecond()] -= 1;
     addRow(rowCoeffs, GLP_LO, 0, 0);
   }
 }

@@ -612,6 +612,12 @@ LogicalResult AffineToHIRImpl::visitOperation(Operation *operation) {
   return operation->emitError("Unknown operation for affine-to-hir pass.");
 }
 
+llvm::SmallVector<SchedulingConstraint>
+getSchedulingConstraints(mlir::func::FuncOp op) {
+  llvm::SmallVector<SchedulingConstraint> schedulingConstraints;
+  return schedulingConstraints;
+}
+
 void AffineToHIRImpl::runOnOperation() {
   std::string logFile = "/dev/null";
   if (this->dbg)
@@ -619,8 +625,9 @@ void AffineToHIRImpl::runOnOperation() {
 
   getOperation().walk([this, logFile](Operation *operation) {
     if (auto funcOp = dyn_cast<mlir::func::FuncOp>(operation)) {
+      auto schedulingConstraints = getSchedulingConstraints(funcOp);
       schedulingAnalysis = std::make_unique<SchedulingAnalysis>(
-          SchedulingAnalysis(funcOp, logFile));
+          SchedulingAnalysis(funcOp, schedulingConstraints, logFile));
       blkArgManager = BlockArgManager(funcOp);
       if (funcOp->getAttr("hwAccel")) {
         funcOp.walk<WalkOrder::PreOrder>([this](Operation *operation) {

@@ -23,8 +23,10 @@ ArrayRef<Value> OpInfo::getParentLoopIVs() { return parentLoopIVs; }
 //-----------------------------------------------------------------------------
 // class SchedulingAnalysis methods.
 //-----------------------------------------------------------------------------
-SchedulingAnalysis::SchedulingAnalysis(Operation *operation,
-                                       const std::string &logFile)
+SchedulingAnalysis::SchedulingAnalysis(
+    Operation *operation,
+    const llvm::SmallVector<SchedulingConstraint> schedulingConstraints,
+    const std::string &logFile)
     : funcOp(dyn_cast<mlir::func::FuncOp>(operation)), logFile(logFile) {
   // FIXME: SchedulingAnalysis should be able to handle arbitrary regions, not
   // just funcOp.
@@ -51,9 +53,10 @@ SchedulingAnalysis::SchedulingAnalysis(Operation *operation,
   initSlackAndDelayForMemoryDependencies(mapMemrefToPortsAttr);
   if (failed(populateSSADependences(funcOp, ssaDependences)))
     return;
-  auto scheduler = std::make_unique<SchedulingILPHandler>(
-      SchedulingILPHandler(operations, mapMemoryDependenceToSlackAndDelay,
-                           ssaDependences, mapMemrefToPortsAttr, logFile));
+
+  auto scheduler = std::make_unique<SchedulingILPHandler>(SchedulingILPHandler(
+      operations, mapMemoryDependenceToSlackAndDelay, ssaDependences,
+      mapMemrefToPortsAttr, schedulingConstraints, logFile));
   this->schedule = scheduler->getSchedule();
   this->mapOperationToPortNumAndDelay = scheduler->getPortAssignments();
 }
@@ -105,7 +108,7 @@ void SchedulingAnalysis::initSlackAndDelayForMemoryDependencies(
       auto dist = memoryDependenceILP.calculateSlack();
 
       // FIXME: Currently we assume a simple dual port RAM.
-      bool potentialPortConflict =
+      bool const potentialPortConflict =
           (isa<AffineLoadOp>(srcOp) && isa<AffineLoadOp>(destOp)) ||
           (isa<AffineStoreOp>(srcOp) && isa<AffineStoreOp>(destOp));
       if (dist) {

@@ -11,10 +11,12 @@
 /// offset are associated with the corresponding operation in affine dialect
 /// (since the corresponding time vars will only be available after lowering to
 /// HIR).
-class SchedulingILPHandler;
 class SchedulingAnalysis {
 public:
-  SchedulingAnalysis(mlir::Operation *operation, const std::string &logFile);
+  SchedulingAnalysis(
+      mlir::Operation *operation,
+      const llvm::SmallVector<SchedulingConstraint> schedulingConstraints,
+      const std::string &logFile);
   bool hasSolution();
   int64_t getTimeOffset(mlir::Operation *);
   std::pair<int64_t, int64_t> getPortNumAndDelayForMemoryOp(mlir::Operation *);
