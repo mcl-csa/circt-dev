@@ -583,6 +583,7 @@ void SchedulingILPHandler::addMaxTimeOffsetRows() {
   }
 }
 
+void SchedulingILPHandler::addFusedOpsConstraintRows(FusedOps fusedOps) {}
 llvm ::Optional<DenseMap<Operation *, int64_t>>
 SchedulingILPHandler::getSchedule() {
   std::error_code ec;

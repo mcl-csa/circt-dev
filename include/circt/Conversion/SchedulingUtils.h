@@ -136,6 +136,50 @@ private:
   OpInfo toInfo;
 };
 
+/// This struct holds information about which operations should be fused.
+struct FusedOps {
+  FusedOps(llvm::SmallVector<mlir::Operation *, 4> &operations,
+           int64_t commonII, int64_t maxOpsPerCycle)
+      : operations(operations), commonII(commonII),
+        maxOpsPerCycle(maxOpsPerCycle) {}
+
+  mlir::LogicalResult isSchedulable() {
+    if (commonII * maxOpsPerCycle < (int64_t)operations.size())
+      return mlir::failure();
+    return mlir::success();
+  }
+
+  struct ILPVars {
+    ILPVars(llvm::SmallVector<llvm::SmallVector<int64_t, 4>, 4> cVars)
+        : numOps(cVars.size()), numSlots(cVars[0].size()) {
+      for (auto v : cVars)
+        assert((int64_t)v.size() == numSlots);
+    }
+
+    int64_t getCVar(int64_t opNum, int64_t slot) { return cVars[opNum][slot]; }
+    int64_t getRVar(int64_t opNum);
+    int64_t getSlotVar(int64_t opNum);
+    llvm::SmallVector<llvm::SmallVector<int64_t, 4>, 4> cVars;
+    llvm::SmallVector<int64_t, 4> rVars;
+    llvm::SmallVector<int64_t, 4> slotVars;
+    int64_t numOps;
+    int64_t numSlots;
+  };
+
+  mlir::Operation *getOperation(int64_t opNum) { return operations[opNum]; }
+  void setILPVars(ILPVars ilpVars) {
+    assert(ilpVars.numOps = operations.size());
+    assert(ilpVars.numSlots = commonII);
+    this->ilpVars = ilpVars;
+  }
+
+private:
+  llvm::SmallVector<mlir::Operation *, 4> operations;
+  int64_t commonII;
+  int64_t maxOpsPerCycle;
+  llvm::Optional<ILPVars> ilpVars;
+};
+
 /// This class calculates the final schedule given the slack between memory
 /// ops
 // and the minimum delays between def and use.
@@ -153,6 +197,7 @@ public:
   void addMemoryDependenceRows();
   void addSSADependenceRows();
   void addMaxTimeOffsetRows();
+  void addFusedOpsConstraintRows(FusedOps group);
   llvm ::Optional<mlir::DenseMap<mlir::Operation *, int64_t>> getSchedule();
   llvm::DenseMap<mlir::Operation *, std::pair<int64_t, int64_t>>
   getPortAssignments();
