@@ -500,13 +500,11 @@ SchedulingILPHandler::SchedulingILPHandler(
         &mapMemoryDependenceToSlackAndDelay,
     const SmallVector<SSADependence> &ssaDependences,
     llvm::DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr,
-    const llvm::SmallVector<SchedulingConstraint> &schedulingConstraints,
-    const std::string &logFile)
+    const llvm::SmallVector<FusedOp> &fusedOps, const std::string &logFile)
     : ILPHandler("SchedulingILP", GLP_MIN, logFile), operations(operations),
       mapMemoryDependenceToSlackAndDelay(mapMemoryDependenceToSlackAndDelay),
       ssaDependences(ssaDependences),
-      mapMemrefToPortsAttr(mapMemrefToPortsAttr),
-      schedulingConstraints(schedulingConstraints) {}
+      mapMemrefToPortsAttr(mapMemrefToPortsAttr), fusedOps(fusedOps) {}
 
 void SchedulingILPHandler::addILPColumns(llvm::raw_fd_ostream &os) {
   size_t col = 1;
@@ -588,6 +586,7 @@ void SchedulingILPHandler::addMaxTimeOffsetRows() {
   }
 }
 
+void SchedulingILPHandler::addFusedOpConstraintRows(FusedOp fusedOps) {}
 llvm ::Optional<DenseMap<Operation *, int64_t>>
 SchedulingILPHandler::getSchedule() {
   std::error_code ec;

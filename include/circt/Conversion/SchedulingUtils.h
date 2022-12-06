@@ -137,34 +137,50 @@ private:
   OpInfo toInfo;
 };
 
-/// Specify module scheduling constraint.
-/// Ensures that (destOp.time -srcOp.time)%n = r
-/// Where srcOp.time is the time when srcOp is executed first time.
-struct ModuloSchedulingConstraint {
-  ModuloSchedulingConstraint(mlir::Operation *srcOp, mlir::Operation *destOp,
-                             unsigned int n, unsigned int r)
-      : srcOp(srcOp), destOp(destOp), n(n), r(r) {
-    assert(srcOp != destOp);
+/// This struct holds information about which operations should be fused.
+struct FusedOp {
+  FusedOp(llvm::SmallVector<mlir::Operation *, 4> &operations, int64_t commonII,
+          int64_t maxOpsPerCycle)
+      : operations(operations), commonII(commonII),
+        maxOpsPerCycle(maxOpsPerCycle) {}
+
+  mlir::LogicalResult isSchedulable() {
+    if (commonII * maxOpsPerCycle < (int64_t)operations.size())
+      return mlir::failure();
+    return mlir::success();
   }
 
-  mlir::Operation *srcOp;
-  mlir::Operation *destOp;
-  int64_t n, r;
-};
+  struct ILPVars {
+    ILPVars(llvm::SmallVector<llvm::SmallVector<int64_t, 4>, 4> cVars)
+        : numOps(cVars.size()), numSlots(cVars[0].size()) {
+      for (auto v : cVars)
+        assert((int64_t)v.size() == numSlots);
+    }
 
-struct MinSchedulingConstraint {
-  MinSchedulingConstraint(mlir::Operation *srcOp, mlir::Operation *destOp,
-                          unsigned int minDelay)
-      : srcOp(srcOp), destOp(destOp), minDelay(minDelay) {
-    assert(srcOp != destOp);
+    int64_t getCVar(int64_t opNum, int64_t slot) { return cVars[opNum][slot]; }
+    int64_t getRVar(int64_t opNum);
+    int64_t getSlotVar(int64_t opNum);
+    llvm::SmallVector<llvm::SmallVector<int64_t, 1>, 1> cVars;
+    llvm::SmallVector<int64_t, 1> rVars;
+    llvm::SmallVector<int64_t, 1> slotVars;
+    int64_t numOps;
+    int64_t numSlots;
+  };
+
+  mlir::Operation *getOperation(int64_t opNum) { return operations[opNum]; }
+  void setILPVars(ILPVars ilpVars) {
+    assert(ilpVars.numOps = operations.size());
+    assert(ilpVars.numSlots = commonII);
+    this->ilpVars = ilpVars;
   }
 
-  mlir::Operation *srcOp;
-  mlir::Operation *destOp;
-  int64_t minDelay;
+private:
+  llvm::SmallVector<mlir::Operation *, 4> operations;
+  int64_t commonII;
+  int64_t maxOpsPerCycle;
+  llvm::Optional<ILPVars> ilpVars;
 };
-typedef std::variant<ModuloSchedulingConstraint, MinSchedulingConstraint>
-    SchedulingConstraint;
+
 /// This class calculates the final schedule given the slack between memory
 /// ops
 // and the minimum delays between def and use.
@@ -177,12 +193,12 @@ public:
           &mapMemoryDependenceToSlackAndDelay,
       const mlir::SmallVector<SSADependence> &ssaDependence,
       llvm::DenseMap<mlir::Value, mlir::ArrayAttr> &mapMemrefToPortsAttr,
-      const llvm::SmallVector<SchedulingConstraint> &schedulingConstraints,
-      const std::string &logFile);
+      const llvm::SmallVector<FusedOp> &fusedOps, const std::string &logFile);
   void addILPColumns(llvm::raw_fd_ostream &);
   void addMemoryDependenceRows();
   void addSSADependenceRows();
   void addMaxTimeOffsetRows();
+  void addFusedOpConstraintRows(FusedOp group);
   llvm ::Optional<mlir::DenseMap<mlir::Operation *, int64_t>> getSchedule();
   llvm::DenseMap<mlir::Operation *, std::pair<int64_t, int64_t>>
   getPortAssignments();
@@ -196,7 +212,7 @@ private:
   llvm::DenseMap<mlir::Value, mlir::ArrayAttr> mapMemrefToPortsAttr;
   llvm::DenseMap<mlir::Operation *, size_t> mapOperationToCol;
   // FIXME: Implement this.
-  const llvm::SmallVector<SchedulingConstraint> schedulingConstraints;
+  const llvm::SmallVector<FusedOp> fusedOps;
   int64_t maxTimeCol;
 };
 #endif

@@ -24,8 +24,7 @@ ArrayRef<Value> OpInfo::getParentLoopIVs() { return parentLoopIVs; }
 // class SchedulingAnalysis methods.
 //-----------------------------------------------------------------------------
 SchedulingAnalysis::SchedulingAnalysis(
-    Operation *operation,
-    const llvm::SmallVector<SchedulingConstraint> schedulingConstraints,
+    Operation *operation, const llvm::SmallVector<FusedOp> fusedOps,
     const std::string &logFile)
     : funcOp(dyn_cast<mlir::func::FuncOp>(operation)), logFile(logFile) {
   // FIXME: SchedulingAnalysis should be able to handle arbitrary regions, not
@@ -56,7 +55,7 @@ SchedulingAnalysis::SchedulingAnalysis(
 
   auto scheduler = std::make_unique<SchedulingILPHandler>(SchedulingILPHandler(
       operations, mapMemoryDependenceToSlackAndDelay, ssaDependences,
-      mapMemrefToPortsAttr, schedulingConstraints, logFile));
+      mapMemrefToPortsAttr, fusedOps, logFile));
   this->schedule = scheduler->getSchedule();
   this->mapOperationToPortNumAndDelay = scheduler->getPortAssignments();
 }
