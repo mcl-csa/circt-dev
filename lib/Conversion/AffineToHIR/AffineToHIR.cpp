@@ -509,11 +509,24 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::CallOp op) {
   for (auto hirOperand : hirOperands) {
     operands.push_back(hirOperand.getValue());
   }
+  StringAttr instanceName;
+  if (op->hasAttrOfType<StringAttr>("instance_name"))
+    instanceName = op->getAttrOfType<StringAttr>("instance_name");
+  else {
+    // The loop ensures that the instance name is not used before.
+    // Same instance name may have been defined previously explicity using the
+    // instance_name attr.
+    do {
+      auto id = mapFuncNameToInstanceID[op.getCallee()]++;
+      instanceName = builder.getStringAttr(op.getCalleeAttr().getValue() + "_" +
+                                           std::to_string(id));
+    } while (mapFuncNameToInstanceNames[op.getCallee()].contains(instanceName));
+  }
 
   auto callOp = builder.create<hir::CallOp>(
-      op->getLoc(), getHIRValueTypes(op->getResultTypes()),
-      builder.getStringAttr(op.getCalleeAttr().getValue()), op.getCalleeAttr(),
-      hirFuncExternOp.funcTyAttr(), operands, tRegion, offsetAttr);
+      op->getLoc(), getHIRValueTypes(op->getResultTypes()), instanceName,
+      op.getCalleeAttr(), hirFuncExternOp.funcTyAttr(), operands, tRegion,
+      offsetAttr);
 
   for (auto attr : op->getAttrs()) {
     if (isa_and_nonnull<hir::HIRDialect>(attr.getNameDialect()))
@@ -612,8 +625,19 @@ LogicalResult AffineToHIRImpl::visitOperation(Operation *operation) {
   return operation->emitError("Unknown operation for affine-to-hir pass.");
 }
 
-llvm::SmallVector<FusedOp> getFusedOps(mlir::func::FuncOp op) {
+llvm::SmallVector<FusedOp> getFusedOps(mlir::func::FuncOp funcOp) {
   llvm::SmallVector<FusedOp> fusedOps;
+  DenseMap<StringRef, SmallVector<Operation *>> mapInstNameToOperations;
+  funcOp.walk([&mapInstNameToOperations](Operation *operation) {
+    if (operation->hasAttrOfType<StringAttr>("instance_name"))
+      mapInstNameToOperations
+          [operation->getAttrOfType<StringAttr>("instance_name").strref()]
+              .push_back(operation);
+  });
+  for (auto kv : mapInstNameToOperations) {
+    FusedOp fusedOp(kv.getFirst(), kv.getSecond(), 4, 1);
+    fusedOps.push_back(fusedOp);
+  }
   return fusedOps;
 }
 

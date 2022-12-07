@@ -6,6 +6,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Support/LLVM.h"
 #include "llvm/Support/FileSystem.h"
 #include <cstdint>
 #include <tuple>
@@ -177,7 +178,7 @@ populateSSADependences(mlir::func::FuncOp funcOp,
 }
 
 //-----------------------------------------------------------------------------
-// ILPHandler methods.
+// ILPHandler.
 //-----------------------------------------------------------------------------
 ILPHandler::ILPHandler(const char *ilpName, int optKind,
                        const std::string &logFile)
@@ -290,7 +291,7 @@ int64_t ILPHandler::getColVarValue(int64_t col) {
 }
 
 //-----------------------------------------------------------------------------
-// MemoryDependenceILPHandler methods.
+// MemoryDependenceILPHandler.
 //-----------------------------------------------------------------------------
 MemoryDependenceILPHandler::MemoryDependenceILPHandler(OpInfo fromInfo,
                                                        OpInfo toInfo,
@@ -490,17 +491,17 @@ void MemoryDependenceILPHandler::addHappensBeforeConstraintRow() {
 }
 
 //-----------------------------------------------------------------------------
-// SchedulingILPHandler methods.
+// SchedulingILPHandler.
 //-----------------------------------------------------------------------------
 
 SchedulingILPHandler::SchedulingILPHandler(
     const SmallVector<Operation *> operations,
-    const llvm::DenseMap<std::pair<Operation *, Operation *>,
-                         std::pair<int64_t, int64_t>>
+    const DenseMap<std::pair<Operation *, Operation *>,
+                   std::pair<int64_t, int64_t>>
         &mapMemoryDependenceToSlackAndDelay,
     const SmallVector<SSADependence> &ssaDependences,
-    llvm::DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr,
-    const llvm::SmallVector<FusedOp> &fusedOps, const std::string &logFile)
+    DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr,
+    const SmallVector<FusedOp> &fusedOps, const std::string &logFile)
     : ILPHandler("SchedulingILP", GLP_MIN, logFile), operations(operations),
       mapMemoryDependenceToSlackAndDelay(mapMemoryDependenceToSlackAndDelay),
       ssaDependences(ssaDependences),
@@ -509,7 +510,7 @@ SchedulingILPHandler::SchedulingILPHandler(
 void SchedulingILPHandler::addILPColumns(llvm::raw_fd_ostream &os) {
   size_t col = 1;
   for (auto *operation : operations) {
-    mapOperationToCol[operation] = col;
+    mapOperationToCol[operation] = col++;
     addColumnVar(GLP_LO, 0, 0);
     // Print the mapping for debugging.
     os << "-----------------------------------------------------------------"
@@ -519,7 +520,58 @@ void SchedulingILPHandler::addILPColumns(llvm::raw_fd_ostream &os) {
     os << "\n";
     // operation->print(os);
     // os << "\n";
-    col += 1;
+  }
+
+  for (auto &fusedOp : fusedOps) {
+    assert(fusedOp.isSchedulable());
+    int64_t numSlots = fusedOp.getCommonII();
+    int64_t numOps = fusedOp.getNumOps();
+    auto cVars = SmallVector<SmallVector<int64_t>>(
+        numOps, SmallVector<int64_t>(numSlots, 0));
+    auto rVars = SmallVector<int64_t>(numOps);
+    auto dVars = SmallVector<int64_t>(numOps);
+
+    // Assign new columns for fusedOp constraint vars.
+    for (int opNum = 0; opNum < numOps; opNum++) {
+      dVars[opNum] = col++;
+      addColumnVar(GLP_LO, 0, 0);
+    }
+    for (int opNum = 0; opNum < numOps; opNum++) {
+      rVars[opNum] = col++;
+      addColumnVar(GLP_LO, 0, 0);
+    }
+    for (int opNum = 0; opNum < numOps; opNum++) {
+      for (int slot = 0; slot < numSlots; slot++) {
+        cVars[opNum][slot] = col++;
+        addColumnVar(GLP_LO, 0, 0);
+      }
+    }
+
+    os << "\n----------------------------------------\nOpFusionGroup : "
+       << fusedOp.getInstanceName()
+       << "\n----------"
+          "------------------------------\n";
+    os << "\n* Operations to fuse :\n";
+    for (int opNum = 0; opNum < numOps; opNum++) {
+      os << "\tc" << mapOperationToCol[fusedOp.getOperation(opNum)] << " : ";
+      fusedOp.getOperation(opNum)->getLoc()->print(os);
+      os << "\n";
+    }
+    os << "\n* ILP vars :";
+    os << "\n\tOp \t:\tdiv\t|\trem\t|\tslots";
+    os << "\n------------------------------------------------------------------"
+          "-------------------";
+
+    for (int opNum = 0; opNum < numOps; opNum++) {
+      os << "\n\tc" << mapOperationToCol[fusedOp.getOperation(opNum)] << "\t:";
+      os << "\tc" << dVars[opNum] << "\t|";
+      os << "\tc" << rVars[opNum] << "\t|";
+      for (int slot = 0; slot < numSlots; slot++)
+        os << "\tc" << cVars[opNum][slot] << ",";
+    }
+
+    FusedOpInfo fusedOpInfo(cVars, dVars, rVars);
+    fusedOpInfos.push_back(fusedOpInfo);
   }
 
   // This column corresponds to the max of all time-vars i.e. the total latency.\
@@ -527,6 +579,7 @@ void SchedulingILPHandler::addILPColumns(llvm::raw_fd_ostream &os) {
   maxTimeCol = col;
   addColumnVar(GLP_LO, 0, 0, /*objective coeff*/ 1);
 }
+
 void setRowCoeffsOfOpAndItsParents(
     SmallVector<int> &rowCoeffs,
     DenseMap<Operation *, size_t> &mapOperationToCol, Operation *operation,
@@ -537,6 +590,7 @@ void setRowCoeffsOfOpAndItsParents(
     operation = operation->getParentOp();
   }
 }
+
 void SchedulingILPHandler::addMemoryDependenceRows() {
   for (auto depSlackAndDelay : mapMemoryDependenceToSlackAndDelay) {
     auto *srcOp = depSlackAndDelay.getFirst().first;
@@ -586,7 +640,15 @@ void SchedulingILPHandler::addMaxTimeOffsetRows() {
   }
 }
 
-void SchedulingILPHandler::addFusedOpConstraintRows(FusedOp fusedOps) {}
+/// op_i.time = d_i*II+r_i
+/// r_i = 0* c_i_0 +1 *c_i_1 2*c_i_2
+void SchedulingILPHandler::addFusedOpConstraintRows() {
+  for (size_t i = 0; i < fusedOps.size(); i++) {
+    auto fusedOp = fusedOps[i];
+    auto fusedOpInfo = fusedOpInfos[i];
+  }
+}
+
 llvm ::Optional<DenseMap<Operation *, int64_t>>
 SchedulingILPHandler::getSchedule() {
   std::error_code ec;

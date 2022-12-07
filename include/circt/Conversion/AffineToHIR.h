@@ -64,5 +64,7 @@ private:
   std::stack<OpBuilder::InsertionGuard> insertionGuards;
   llvm::DenseMap<std::pair<Value, Region *>, Value> mapValueToRegionArg;
   bool dbg;
+  DenseMap<StringRef, int64_t> mapFuncNameToInstanceID;
+  DenseMap<StringRef, DenseSet<StringRef>> mapFuncNameToInstanceNames;
 };
 #endif // CIRCT_CONVERSION_AFFINETOHIR_H_

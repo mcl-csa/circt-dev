@@ -137,49 +137,69 @@ private:
   OpInfo toInfo;
 };
 
-/// This struct holds information about which operations should be fused.
+/// This struct manages the mapping of ILP variables required for op fusion
+/// constraints to the corresponding column numbers in the ILP constraint
+/// matrix. The ILP constraints are:
+/// time = n*II+r
+/// r = 0*c0 + 1*c1 + 2*c0
+/// c0+c1+c2 = 1
+/// 0<= c0,c1,c2<=1
 struct FusedOp {
-  FusedOp(llvm::SmallVector<mlir::Operation *, 4> &operations, int64_t commonII,
+  FusedOp(llvm::StringRef instanceName,
+          llvm::SmallVector<mlir::Operation *> &operations, int64_t commonII,
           int64_t maxOpsPerCycle)
-      : operations(operations), commonII(commonII),
-        maxOpsPerCycle(maxOpsPerCycle) {}
+      : instanceName(instanceName), operations(operations), commonII(commonII),
+        maxOpsPerCycle(maxOpsPerCycle) {
+    assert(operations.size() > 1);
+    for (auto *operation : operations)
+      assert(operation->getName() == operations[0]->getName());
+  }
 
-  mlir::LogicalResult isSchedulable() {
+  [[nodiscard]] bool isSchedulable() const {
     if (commonII * maxOpsPerCycle < (int64_t)operations.size())
-      return mlir::failure();
-    return mlir::success();
+      return false;
+    return true;
   }
 
-  struct ILPVars {
-    ILPVars(llvm::SmallVector<llvm::SmallVector<int64_t, 4>, 4> cVars)
-        : numOps(cVars.size()), numSlots(cVars[0].size()) {
-      for (auto v : cVars)
-        assert((int64_t)v.size() == numSlots);
-    }
-
-    int64_t getCVar(int64_t opNum, int64_t slot) { return cVars[opNum][slot]; }
-    int64_t getRVar(int64_t opNum);
-    int64_t getSlotVar(int64_t opNum);
-    llvm::SmallVector<llvm::SmallVector<int64_t, 1>, 1> cVars;
-    llvm::SmallVector<int64_t, 1> rVars;
-    llvm::SmallVector<int64_t, 1> slotVars;
-    int64_t numOps;
-    int64_t numSlots;
-  };
-
-  mlir::Operation *getOperation(int64_t opNum) { return operations[opNum]; }
-  void setILPVars(ILPVars ilpVars) {
-    assert(ilpVars.numOps = operations.size());
-    assert(ilpVars.numSlots = commonII);
-    this->ilpVars = ilpVars;
+  [[nodiscard]] mlir::Operation *getOperation(int64_t opNum) const {
+    return operations[opNum];
   }
+  [[nodiscard]] int64_t getCommonII() const { return commonII; }
+  [[nodiscard]] int64_t getNumOps() const { return operations.size(); }
+  llvm::StringRef getInstanceName() const { return instanceName; }
 
 private:
-  llvm::SmallVector<mlir::Operation *, 4> operations;
+  llvm::StringRef instanceName;
+  llvm::SmallVector<mlir::Operation *> operations;
   int64_t commonII;
   int64_t maxOpsPerCycle;
-  llvm::Optional<ILPVars> ilpVars;
 };
+struct FusedOpInfo {
+  FusedOpInfo(llvm::SmallVector<llvm::SmallVector<int64_t>> cVars,
+              llvm::SmallVector<int64_t> dVars,
+              llvm::SmallVector<int64_t> rVars)
+      : cVars(cVars), dVars(dVars), rVars(rVars), numOps(cVars.size()),
+        numSlots(cVars[0].size()) {
+    for (auto v : cVars)
+      assert((int64_t)v.size() == numSlots);
+    assert((int64_t)dVars.size() == numOps);
+    assert((int64_t)rVars.size() == numOps);
+  }
+
+  int64_t getCVar(int64_t opNum, int64_t slot) {
+    auto col = cVars[opNum][slot];
+    assert(col > 0);
+    return col;
+  }
+  int64_t getRVar(int64_t opNum);
+  int64_t getSlotVar(int64_t opNum);
+  llvm::SmallVector<llvm::SmallVector<int64_t>> cVars;
+  llvm::SmallVector<int64_t> dVars;
+  llvm::SmallVector<int64_t> rVars;
+  int64_t numOps;
+  int64_t numSlots;
+};
+/// This struct holds information about which operations should be fused.
 
 /// This class calculates the final schedule given the slack between memory
 /// ops
@@ -198,7 +218,7 @@ public:
   void addMemoryDependenceRows();
   void addSSADependenceRows();
   void addMaxTimeOffsetRows();
-  void addFusedOpConstraintRows(FusedOp group);
+  void addFusedOpConstraintRows();
   llvm ::Optional<mlir::DenseMap<mlir::Operation *, int64_t>> getSchedule();
   llvm::DenseMap<mlir::Operation *, std::pair<int64_t, int64_t>>
   getPortAssignments();
@@ -211,8 +231,8 @@ private:
   const mlir::SmallVector<SSADependence> ssaDependences;
   llvm::DenseMap<mlir::Value, mlir::ArrayAttr> mapMemrefToPortsAttr;
   llvm::DenseMap<mlir::Operation *, size_t> mapOperationToCol;
-  // FIXME: Implement this.
   const llvm::SmallVector<FusedOp> fusedOps;
+  llvm::SmallVector<FusedOpInfo> fusedOpInfos;
   int64_t maxTimeCol;
 };
 #endif
