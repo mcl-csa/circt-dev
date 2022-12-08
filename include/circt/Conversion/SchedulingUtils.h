@@ -224,6 +224,11 @@ public:
   getPortAssignments();
 
 private:
+  FusedOpInfo addFusedOpCols(const FusedOp &fusedOp, int64_t *col);
+  void dumpFusedOpCols(llvm::raw_fd_ostream &os, const FusedOp &fusedOp,
+                       const FusedOpInfo &fusedOpInfo);
+
+private:
   const mlir::SmallVector<mlir::Operation *> operations;
   const llvm::DenseMap<std::pair<mlir::Operation *, mlir::Operation *>,
                        std::pair<int64_t, int64_t>>

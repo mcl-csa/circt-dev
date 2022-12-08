@@ -507,8 +507,66 @@ SchedulingILPHandler::SchedulingILPHandler(
       ssaDependences(ssaDependences),
       mapMemrefToPortsAttr(mapMemrefToPortsAttr), fusedOps(fusedOps) {}
 
+FusedOpInfo SchedulingILPHandler::addFusedOpCols(const FusedOp &fusedOp,
+                                                 int64_t *col) {
+  assert(fusedOp.isSchedulable());
+  int64_t numSlots = fusedOp.getCommonII();
+  int64_t numOps = fusedOp.getNumOps();
+  auto cVars = SmallVector<SmallVector<int64_t>>(
+      numOps, SmallVector<int64_t>(numSlots, 0));
+  auto rVars = SmallVector<int64_t>(numOps);
+  auto dVars = SmallVector<int64_t>(numOps);
+
+  // Assign new columns for fusedOp constraint vars.
+  for (int opNum = 0; opNum < numOps; opNum++) {
+    dVars[opNum] = (*col)++;
+    addColumnVar(GLP_LO, 0, 0);
+  }
+  for (int opNum = 0; opNum < numOps; opNum++) {
+    rVars[opNum] = (*col)++;
+    addColumnVar(GLP_DB, 0, numSlots);
+  }
+  for (int opNum = 0; opNum < numOps; opNum++) {
+    for (int slot = 0; slot < numSlots; slot++) {
+      cVars[opNum][slot] = (*col)++;
+      addColumnVar(GLP_DB, 0, 1);
+    }
+  }
+  return FusedOpInfo(cVars, dVars, rVars);
+}
+
+void SchedulingILPHandler::dumpFusedOpCols(llvm::raw_fd_ostream &os,
+                                           const FusedOp &fusedOp,
+                                           const FusedOpInfo &fusedOpInfo) {
+  int64_t numSlots = fusedOp.getCommonII();
+  int64_t numOps = fusedOp.getNumOps();
+  os << "\n----------------------------------------\nOpFusionGroup : "
+     << fusedOp.getInstanceName()
+     << "\n----------"
+        "------------------------------\n";
+  os << "\n* Operations to fuse :\n";
+  for (int opNum = 0; opNum < numOps; opNum++) {
+    os << "\tc" << mapOperationToCol[fusedOp.getOperation(opNum)] << " : ";
+    fusedOp.getOperation(opNum)->getLoc()->print(os);
+    os << "\n";
+  }
+  os << "\n* ILP vars :";
+  os << "\n\tOp \t:\tdiv\t|\trem\t|\tslots";
+  os << "\n------------------------------------------------------------------"
+        "-------------------";
+
+  for (int opNum = 0; opNum < numOps; opNum++) {
+    os << "\n\tc" << mapOperationToCol[fusedOp.getOperation(opNum)] << "\t:";
+    os << "\tc" << fusedOpInfo.dVars[opNum] << "\t|";
+
+    os << "\tc" << fusedOpInfo.rVars[opNum] << "\t|";
+    for (int slot = 0; slot < numSlots; slot++)
+      os << "\tc" << fusedOpInfo.cVars[opNum][slot] << ",";
+  }
+}
+
 void SchedulingILPHandler::addILPColumns(llvm::raw_fd_ostream &os) {
-  size_t col = 1;
+  int64_t col = 1;
   for (auto *operation : operations) {
     mapOperationToCol[operation] = col++;
     addColumnVar(GLP_LO, 0, 0);
@@ -524,53 +582,8 @@ void SchedulingILPHandler::addILPColumns(llvm::raw_fd_ostream &os) {
 
   for (auto &fusedOp : fusedOps) {
     assert(fusedOp.isSchedulable());
-    int64_t numSlots = fusedOp.getCommonII();
-    int64_t numOps = fusedOp.getNumOps();
-    auto cVars = SmallVector<SmallVector<int64_t>>(
-        numOps, SmallVector<int64_t>(numSlots, 0));
-    auto rVars = SmallVector<int64_t>(numOps);
-    auto dVars = SmallVector<int64_t>(numOps);
-
-    // Assign new columns for fusedOp constraint vars.
-    for (int opNum = 0; opNum < numOps; opNum++) {
-      dVars[opNum] = col++;
-      addColumnVar(GLP_LO, 0, 0);
-    }
-    for (int opNum = 0; opNum < numOps; opNum++) {
-      rVars[opNum] = col++;
-      addColumnVar(GLP_LO, 0, 0);
-    }
-    for (int opNum = 0; opNum < numOps; opNum++) {
-      for (int slot = 0; slot < numSlots; slot++) {
-        cVars[opNum][slot] = col++;
-        addColumnVar(GLP_LO, 0, 0);
-      }
-    }
-
-    os << "\n----------------------------------------\nOpFusionGroup : "
-       << fusedOp.getInstanceName()
-       << "\n----------"
-          "------------------------------\n";
-    os << "\n* Operations to fuse :\n";
-    for (int opNum = 0; opNum < numOps; opNum++) {
-      os << "\tc" << mapOperationToCol[fusedOp.getOperation(opNum)] << " : ";
-      fusedOp.getOperation(opNum)->getLoc()->print(os);
-      os << "\n";
-    }
-    os << "\n* ILP vars :";
-    os << "\n\tOp \t:\tdiv\t|\trem\t|\tslots";
-    os << "\n------------------------------------------------------------------"
-          "-------------------";
-
-    for (int opNum = 0; opNum < numOps; opNum++) {
-      os << "\n\tc" << mapOperationToCol[fusedOp.getOperation(opNum)] << "\t:";
-      os << "\tc" << dVars[opNum] << "\t|";
-      os << "\tc" << rVars[opNum] << "\t|";
-      for (int slot = 0; slot < numSlots; slot++)
-        os << "\tc" << cVars[opNum][slot] << ",";
-    }
-
-    FusedOpInfo fusedOpInfo(cVars, dVars, rVars);
+    auto fusedOpInfo = addFusedOpCols(fusedOp, &col);
+    dumpFusedOpCols(os, fusedOp, fusedOpInfo);
     fusedOpInfos.push_back(fusedOpInfo);
   }
 
@@ -646,6 +659,11 @@ void SchedulingILPHandler::addFusedOpConstraintRows() {
   for (size_t i = 0; i < fusedOps.size(); i++) {
     auto fusedOp = fusedOps[i];
     auto fusedOpInfo = fusedOpInfos[i];
+    for (int opNum = 0; opNum < fusedOp.getNumOps(); opNum++) {
+      auto *operation = fusedOp.getOperation(opNum);
+      auto dVarCol = fusedOpInfo.dVars[opNum];
+      auto rVarCol = fusedOpInfo.rVars[opNum];
+    }
   }
 }
 
