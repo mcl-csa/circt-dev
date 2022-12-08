@@ -167,6 +167,7 @@ struct FusedOp {
   [[nodiscard]] int64_t getCommonII() const { return commonII; }
   [[nodiscard]] int64_t getNumOps() const { return operations.size(); }
   llvm::StringRef getInstanceName() const { return instanceName; }
+  int64_t getMaxOpsPerCycle() { return maxOpsPerCycle; }
 
 private:
   llvm::StringRef instanceName;

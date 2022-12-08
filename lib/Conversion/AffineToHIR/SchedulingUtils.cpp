@@ -524,7 +524,7 @@ FusedOpInfo SchedulingILPHandler::addFusedOpCols(const FusedOp &fusedOp,
   }
   for (int opNum = 0; opNum < numOps; opNum++) {
     rVars[opNum] = (*col)++;
-    addColumnVar(GLP_DB, 0, numSlots);
+    addColumnVar(GLP_DB, 0, numSlots - 1);
   }
   for (int opNum = 0; opNum < numOps; opNum++) {
     for (int slot = 0; slot < numSlots; slot++) {
@@ -648,21 +648,53 @@ void SchedulingILPHandler::addMaxTimeOffsetRows() {
   for (auto it : mapOperationToCol) {
     SmallVector<int> rowCoeffs(getNumCols(), 0);
     rowCoeffs[maxTimeCol - 1] = 1;
-    rowCoeffs[it.getSecond()] -= 1;
+    rowCoeffs[it.getSecond() - 1] -= 1;
     addRow(rowCoeffs, GLP_LO, 0, 0);
   }
 }
 
 /// op_i.time = d_i*II+r_i
 /// r_i = 0* c_i_0 +1 *c_i_1 2*c_i_2
+/// c_i_0 + c_i_1 + c_i_2 = 1
 void SchedulingILPHandler::addFusedOpConstraintRows() {
   for (size_t i = 0; i < fusedOps.size(); i++) {
     auto fusedOp = fusedOps[i];
     auto fusedOpInfo = fusedOpInfos[i];
     for (int opNum = 0; opNum < fusedOp.getNumOps(); opNum++) {
+      auto rowCoeffs = SmallVector<int>(getNumCols(), 0);
       auto *operation = fusedOp.getOperation(opNum);
+      auto opCol = mapOperationToCol[operation];
       auto dVarCol = fusedOpInfo.dVars[opNum];
       auto rVarCol = fusedOpInfo.rVars[opNum];
+      rowCoeffs[opCol - 1] = 1;
+      rowCoeffs[dVarCol - 1] = -fusedOp.getCommonII();
+      rowCoeffs[rVarCol - 1] = -1;
+      // op_i.time = d_i*II+r_i
+      addRow(rowCoeffs, GLP_FX, 0, 0);
+      rowCoeffs[opCol - 1] = 0;
+      rowCoeffs[dVarCol - 1] = 0;
+      for (int slot = 0; slot < fusedOp.getCommonII(); slot++) {
+        auto cVarCol = fusedOpInfo.cVars[opNum][slot];
+        rowCoeffs[cVarCol - 1] = slot;
+      }
+      // r_i = 0* c_i_0 +1 *c_i_1 2*c_i_2
+      addRow(rowCoeffs, GLP_FX, 0, 0);
+      rowCoeffs[rVarCol - 1] = 0;
+      for (int slot = 0; slot < fusedOp.getCommonII(); slot++) {
+        auto cVarCol = fusedOpInfo.cVars[opNum][slot];
+        rowCoeffs[cVarCol - 1] = 1;
+      }
+      // c_i_0 + c_i_1 + c_i_2 = 1
+      addRow(rowCoeffs, GLP_FX, 1, 1);
+    }
+    for (int slot = 0; slot < fusedOp.getCommonII(); slot++) {
+      auto rowCoeffs = SmallVector<int>(getNumCols(), 0);
+      for (int opNum = 0; opNum < fusedOp.getNumOps(); opNum++) {
+        auto cVarCol = fusedOpInfo.cVars[opNum][slot];
+        rowCoeffs[cVarCol - 1] = 1;
+      }
+      // c_0_j + c_1_j+c_2_j = maxOpsPerCycles.
+      addRow(rowCoeffs, GLP_DB, 0, fusedOp.getMaxOpsPerCycle());
     }
   }
 }
@@ -676,6 +708,7 @@ SchedulingILPHandler::getSchedule() {
   addMemoryDependenceRows();
   addSSADependenceRows();
   addMaxTimeOffsetRows();
+  addFusedOpConstraintRows();
   os.changeColor(llvm::raw_ostream::Colors::GREEN);
   os << "\n\n------------------------Top level "
         "ILP----------------------------\n";

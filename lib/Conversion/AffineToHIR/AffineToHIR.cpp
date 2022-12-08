@@ -635,7 +635,9 @@ llvm::SmallVector<FusedOp> getFusedOps(mlir::func::FuncOp funcOp) {
               .push_back(operation);
   });
   for (auto kv : mapInstNameToOperations) {
-    FusedOp fusedOp(kv.getFirst(), kv.getSecond(), 6, 1);
+    if (kv.getSecond().size() == 1)
+      continue;
+    FusedOp const fusedOp(kv.getFirst(), kv.getSecond(), 6, 1);
     fusedOps.push_back(fusedOp);
   }
   return fusedOps;
