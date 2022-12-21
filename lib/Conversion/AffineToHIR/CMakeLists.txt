@@ -1,11 +1,11 @@
 add_circt_library(CIRCTAffineToHIR
-  AutoAffineToHIRPass.cpp
   AffineToHIR.cpp
   AffineToHIRUtils.cpp
+  AutoAffineToHIRPass.cpp
+  HIRPragma.cpp
+  OpFusionAnalysis.cpp
   SchedulingAnalysis.cpp 
   SchedulingUtils.cpp
-  HIRPragma.cpp
-  
 
   DEPENDS
   CIRCTConversionPassIncGen

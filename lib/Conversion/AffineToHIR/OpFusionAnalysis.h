@@ -1,7 +1,4 @@
-#include "circt/Dialect/HIR/IR/HIR.h"
-#include "circt/Dialect/HIR/Transforms/HIRPassImpl.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include <numeric>
 
 struct AccessInfo {
   mlir::Value timeVar;
@@ -20,7 +17,7 @@ struct AccessInfo {
   }
 };
 
-class OpFusionAnalysis : public HIRPassImplBase<circt::hir::FuncOp> {
+class OpFusionAnalysis : public HIRPassImplBase<mlir::func::FuncOp> {
 public:
   OpFusionAnalysis(circt::hir::FuncOp op);
   void getAnalysis(llvm::DenseMap<mlir::StringRef, AccessInfo> &);
