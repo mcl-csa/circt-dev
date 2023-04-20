@@ -1,5 +1,6 @@
+#include "circt/Dialect/HIR/IR/HIR.h"
+#include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-
 struct AccessInfo {
   mlir::Value timeVar;
   int64_t startTime;

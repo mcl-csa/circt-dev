@@ -100,8 +100,7 @@ void SchedulingAnalysis::initSlackAndDelayForMemoryDependencies(
           getMemrefFromAffineLoadOrStoreOp(destOp))
         continue;
       // FIXME: Currently we assume load-to-load dependence to avoid port
-      // conflicts. if (isa<AffineLoadOp>(srcOp) && isa<AffineLoadOp>(destOp))
-      //  continue;
+      // conflicts.
       MemoryDependenceILPHandler memoryDependenceILP(
           mapOperationToInfo[srcOp], mapOperationToInfo[destOp], logFile);
       auto dist = memoryDependenceILP.calculateSlack();

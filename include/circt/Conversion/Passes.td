@@ -16,6 +16,17 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
+// OpFusion
+//===----------------------------------------------------------------------===//
+//def OpFusion : Pass<"hir-fuse-op", "hir::FuncOp"> {
+//  let summary = "Fuse ops";
+//  let description = [{fuses function calls to resuse resources such as multipliers.
+//  }];
+//
+//  let constructor = "circt::hir::createOpFusionPass()";
+//}
+
+//===----------------------------------------------------------------------===//
 // HIRPragma
 //===----------------------------------------------------------------------===//
 

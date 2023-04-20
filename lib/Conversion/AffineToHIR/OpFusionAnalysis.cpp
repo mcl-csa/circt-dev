@@ -1,4 +1,4 @@
-#include "circt/Dialect/HIR/Analysis/OpFusionAnalysis.h"
+#include "circt/Conversion/OpFusionAnalysis.h"
 using namespace mlir;
 using namespace circt;
 Optional<AccessInfo> getAccessInfoAttr(hir::CallOp op) {
