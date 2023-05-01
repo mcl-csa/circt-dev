@@ -1,6 +1,14 @@
 #include "circt/Conversion/SchedulingAnalysis.h"
+#include "circt/Conversion/SchedulingUtils.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
+#include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/Visitors.h"
+#include "llvm/ADT/SmallVector.h"
+#include <cstdlib>
+#include <memory>
 //-----------------------------------------------------------------------------
 // class OpInfo methods.
 //-----------------------------------------------------------------------------
@@ -17,112 +25,166 @@ OpInfo::OpInfo(Operation *operation, int staticPos)
 
 Operation *OpInfo::getOperation() { return operation; }
 int OpInfo::getStaticPosition() { return staticPos; }
-ArrayRef<AffineForOp> OpInfo::getParentLoops() { return parentLoops; }
-ArrayRef<Value> OpInfo::getParentLoopIVs() { return parentLoopIVs; }
+size_t OpInfo::getNumParentLoops() { return parentLoops.size(); }
+AffineForOp OpInfo::getParentLoop(int i) { return parentLoops[i]; }
+Value OpInfo::getParentLoopIV(int i) { return parentLoopIVs[i]; }
+
+MemOpInfo::MemOpInfo(mlir::AffineLoadOp operation, int staticPos)
+    : OpInfo(operation, staticPos) {}
+
+MemOpInfo::MemOpInfo(mlir::AffineStoreOp operation, int staticPos)
+    : OpInfo(operation, staticPos) {}
+
+Value MemOpInfo::getMemRef() {
+  if (auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation()))
+    return storeOp.getMemRef();
+  auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation());
+  assert(loadOp);
+  return loadOp.getMemRef();
+}
+
+int64_t MemOpInfo::getDelay() {
+  return getOperation()->getAttrOfType<IntegerAttr>("hir.delay").getInt();
+}
+
+size_t MemOpInfo::getNumMemDims() {
+  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation()))
+    return loadOp.getAffineMap().getNumDims();
+
+  auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation());
+  assert(storeOp);
+  return storeOp.getAffineMap().getNumDims();
+}
+
+int64_t MemOpInfo::getConstCoeff(int64_t dim) {
+  SmallVector<int64_t> coeffs;
+  AffineExpr expr;
+  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation())) {
+    expr = loadOp.getAffineMap().getResult(dim);
+  } else {
+    auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation());
+    expr = storeOp.getAffineMap().getResult(dim);
+  }
+
+  // If the expression could not be flattened then treat the whole dim as zero
+  // (i.e. all accesses alias on this dim).
+  if (failed(getFlattenedAffineExpr(expr, getNumMemDims(), 0, &coeffs)))
+    return 0;
+
+  return coeffs.back();
+}
+
+int64_t MemOpInfo::getIdxCoeff(mlir::Value var, int64_t dim) {
+  auto indices = getIndices();
+  Optional<size_t> varLoc = llvm::None;
+  AffineExpr expr;
+
+  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation())) {
+    expr = loadOp.getAffineMap().getResult(dim);
+    for (size_t i = 0; i < indices.size(); i++) {
+      if (indices[i] == var) {
+        varLoc = i;
+        break;
+      }
+    }
+  } else if (auto storeOp = dyn_cast<AffineLoadOp>(this->getOperation())) {
+    expr = storeOp.getAffineMap().getResult(dim);
+    for (size_t i = 0; i < indices.size(); i++) {
+      if (indices[i] == var) {
+        varLoc = i;
+        break;
+      }
+    }
+  } else {
+    assert(false && "Must be a affine load or store op.");
+  }
+
+  if (!varLoc)
+    return 0;
+
+  SmallVector<int64_t> coeffs;
+  if (failed(getFlattenedAffineExpr(expr, getNumMemDims(), 0, &coeffs)))
+    return 0;
+
+  return coeffs[*varLoc];
+}
+
+SmallVector<int64_t, 4>
+MemOpInfo::getIdxCoeffs(mlir::ArrayRef<mlir::Value> indices, int64_t dim) {
+
+  SmallVector<int64_t, 4> coeffs;
+  for (auto idx : indices)
+    coeffs.push_back(this->getIdxCoeff(idx, dim));
+
+  return coeffs;
+}
+
+llvm::SmallVector<mlir::Value> MemOpInfo::getIndices() {
+  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation()))
+    return loadOp.getIndices();
+
+  auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation());
+  assert(storeOp);
+  return storeOp.getIndices();
+}
 
 //-----------------------------------------------------------------------------
 // class SchedulingAnalysis methods.
 //-----------------------------------------------------------------------------
-SchedulingAnalysis::SchedulingAnalysis(
-    Operation *operation, const llvm::SmallVector<FusedOp> fusedOps,
-    const std::string &logFile)
-    : funcOp(dyn_cast<mlir::func::FuncOp>(operation)), logFile(logFile) {
-  // FIXME: SchedulingAnalysis should be able to handle arbitrary regions, not
-  // just funcOp.
-  // FIXME: We should not require an early exit even if for a declaration.
-  if (funcOp.isDeclaration()) {
-    this->schedule = llvm::DenseMap<Operation *, int64_t>();
-    return;
-  }
-
-  std::error_code ec;
-  llvm::raw_fd_ostream os(logFile, ec);
-  os << "----------------------------------------------------------------------"
-        "----------\n";
-  os << "This log file contains the ILP formulation for affine-to-hir "
-        "pass.\n";
-  os << "----------------------------------------------------------------------"
-        "----------\n\n\n";
-  os.close();
-
-  SmallVector<SSADependence> ssaDependences;
-  llvm::DenseMap<Value, ArrayAttr> mapMemrefToPortsAttr;
-  initOperationInfo();
-  populateMemrefToPortsAttrMapping(funcOp, mapMemrefToPortsAttr);
-  initSlackAndDelayForMemoryDependencies(mapMemrefToPortsAttr);
-  if (failed(populateSSADependences(funcOp, ssaDependences)))
-    return;
-
-  auto scheduler = std::make_unique<SchedulingILPHandler>(SchedulingILPHandler(
-      operations, mapMemoryDependenceToSlackAndDelay, ssaDependences,
-      mapMemrefToPortsAttr, fusedOps, logFile));
-  this->schedule = scheduler->getSchedule();
-  this->mapOperationToPortNumAndDelay = scheduler->getPortAssignments();
-}
-
-bool SchedulingAnalysis::hasSolution() { return this->schedule.hasValue(); }
+SchedulingAnalysis::SchedulingAnalysis(mlir::func::FuncOp op)
+    : funcOp(op), scheduler(std::make_unique<Scheduler>()) {}
 
 int64_t SchedulingAnalysis::getTimeOffset(Operation *operation) {
-  assert(schedule.hasValue());
-  auto v = schedule->find(operation);
-  assert(v != schedule->end());
-  return v->second;
+  return scheduler->getTimeOffset(operation);
 }
 
-std::pair<int64_t, int64_t>
-SchedulingAnalysis::getPortNumAndDelayForMemoryOp(Operation *operation) {
+int64_t SchedulingAnalysis::getPortNumForMemoryOp(Operation *operation) {
   assert(isa<AffineLoadOp>(operation) || isa<AffineStoreOp>(operation));
-  auto portNumAndDelay = this->mapOperationToPortNumAndDelay.find(operation);
-  return portNumAndDelay->getSecond();
+  // FIXME
 }
 
-void SchedulingAnalysis::initOperationInfo() {
-  int staticPos = 0;
-  funcOp.walk<mlir::WalkOrder::PreOrder>(
-      [this, &staticPos](Operation *operation) {
-        mapOperationToInfo[operation] = OpInfo(operation, staticPos++);
-        operations.push_back(operation);
-        return WalkResult::advance();
-      });
-}
-
-void SchedulingAnalysis::initSlackAndDelayForMemoryDependencies(
-    DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr) {
-  SmallVector<Operation *> memOperations;
+LogicalResult SchedulingAnalysis::insertDependencies() {
+  SmallVector<MemOpInfo> memOperations;
   funcOp.walk([&memOperations](Operation *operation) {
-    if (isa<AffineLoadOp, AffineStoreOp>(operation))
-      memOperations.push_back(operation);
+    if (auto loadOp = dyn_cast<AffineLoadOp>(operation))
+      memOperations.push_back(MemOpInfo(loadOp, memOperations.size()));
+    else if (auto storeOp = dyn_cast<AffineStoreOp>(operation))
+      memOperations.push_back(MemOpInfo(storeOp, memOperations.size()));
     return WalkResult::advance();
   });
-  for (auto *srcOp : memOperations) {
-    for (auto *destOp : memOperations) {
-      if (getMemrefFromAffineLoadOrStoreOp(srcOp) !=
-          getMemrefFromAffineLoadOrStoreOp(destOp))
+  for (size_t i = 0; i < memOperations.size(); i++) {
+    auto srcOp = memOperations[i];
+    for (size_t j = 0; j < memOperations.size(); j++) {
+      auto destOp = memOperations[j];
+      if (srcOp.getMemRef() != destOp.getMemRef())
         continue;
+
       // FIXME: Currently we assume load-to-load dependence to avoid port
-      // conflicts. if (isa<AffineLoadOp>(srcOp) && isa<AffineLoadOp>(destOp))
+      // conflicts.
+      // if (isa<AffineLoadOp>(srcOp) && isa<AffineLoadOp>(destOp))
       //  continue;
-      MemoryDependenceILPHandler memoryDependenceILP(
-          mapOperationToInfo[srcOp], mapOperationToInfo[destOp], logFile);
-      auto dist = memoryDependenceILP.calculateSlack();
+
+      MemoryDependenceILPHandler memoryDependenceILP(srcOp, destOp);
+      if (memoryDependenceILP.Solve() !=
+          MemoryDependenceILPHandler::ResultStatus::OPTIMAL)
+        return srcOp.getOperation()
+                   ->emitError("Could not calculate slack.")
+                   .attachNote(destOp.getOperation()->getLoc())
+               << "destination op here.";
+      int64_t dist = (int64_t)memoryDependenceILP.Objective().Value();
 
       // FIXME: Currently we assume a simple dual port RAM.
-      bool const potentialPortConflict =
+      bool const portConflict =
           (isa<AffineLoadOp>(srcOp) && isa<AffineLoadOp>(destOp)) ||
           (isa<AffineStoreOp>(srcOp) && isa<AffineStoreOp>(destOp));
-      if (dist) {
-        int minRequiredDelay;
-        minRequiredDelay = getMemOpSafeDelay(srcOp, mapMemrefToPortsAttr);
-        if (potentialPortConflict)
-          minRequiredDelay = std::max(minRequiredDelay, 1);
 
-        mapMemoryDependenceToSlackAndDelay[std::make_pair(srcOp, destOp)] =
-            std::make_pair(dist.getValue(), minRequiredDelay);
-      }
+      int64_t delay = isa<AffineLoadOp>(srcOp.getOperation())
+                          ? (portConflict ? 1 : 0)
+                          : srcOp.getDelay();
+      DependenceConstraint dep(srcOp.getOperation(), destOp.getOperation(),
+                               dist + delay);
+      this->scheduler->addDependenceConstraint(dep);
     }
   }
-}
-
-int64_t SchedulingAnalysis::getLoopII(AffineForOp op) {
-  return ::getLoopII(op);
+  return success();
 }
