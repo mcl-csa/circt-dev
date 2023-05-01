@@ -8,6 +8,9 @@ void circt::hir::registerPassPipelines() {
         pm.addPass(circt::hir::createOptTimePass());
         pm.addPass(mlir::createCanonicalizerPass());
         pm.addPass(circt::hir::createOptBitWidthPass());
+        pm.addPass(mlir::createCanonicalizerPass());
+        pm.addPass(mlir::createSCCPPass());
+        pm.addPass(mlir::createCSEPass());
       });
 
   mlir::PassPipelineRegistration<>(

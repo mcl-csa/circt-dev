@@ -231,6 +231,11 @@ Optional<int64_t> ForOp::getTripCount() {
   auto ub = helper::getConstantIntValue(this->ub());
   if (!ub.hasValue())
     return llvm::None;
+  if (*ub <= *lb) {
+    this->emitError("Upper bound should be greater than lower bound.")
+        << "ub=" << *ub << "lb=" << *lb;
+    assert(false && "ub>lb");
+  }
   auto step = helper::getConstantIntValue(this->step());
   if (!step.hasValue())
     return llvm::None;
