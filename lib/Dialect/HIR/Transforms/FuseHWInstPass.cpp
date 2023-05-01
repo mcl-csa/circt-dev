@@ -81,7 +81,6 @@ void FuseHWInstPass::runOnOperation() {
     hw::InstanceOp firstInstanceOp = group.getSecond()[0];
     OpBuilder builder(firstInstanceOp);
     auto selectArgNum = fusionAnalysis.getSelectArgNum(group.getFirst());
-    auto t = getConstantX(builder, 1);
     SmallVector<Value> inputs;
     for (auto inp : firstInstanceOp.getInputs()) {
       auto width = inp.getType().getIntOrFloatBitWidth();

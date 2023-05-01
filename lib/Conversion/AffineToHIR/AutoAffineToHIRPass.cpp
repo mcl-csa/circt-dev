@@ -6,11 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "circt/Conversion/AutoAffineToHIRPass.h"
 #include "../PassDetail.h"
 #include "circt/Conversion/AffineToHIR.h"
+#include "circt/Conversion/AutoAffineToHIRPass.h"
 #include "circt/Dialect/Comb/CombOps.h"
-#include "circt/Dialect/HIR/Analysis/OpFusionAnalysis.h"
+//#include "circt/Dialect/HIR/Analysis/OpFusionAnalysis.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "circt/Dialect/HIR/IR/helper.h"
@@ -53,7 +53,7 @@ private:
   llvm::DenseMap<StringRef, mlir::func::CallOp> mapLabelToCallOp;
 };
 
-struct FusionGroup {
+/*struct FusionGroup {
   FusionGroup(size_t ii) : numOps(0) { opsToFuse.append(ii, llvm::None); }
   LogicalResult insert(std::pair<StringRef, AccessInfo> op) {
     int64_t const ii = (int64_t)opsToFuse.size();
@@ -75,55 +75,55 @@ private:
 struct OpFusionHandler {
   OpFusionHandler(llvm::DenseMap<StringRef, AccessInfo> mapLabelToAccessInfo);
 };
+*/
 } // namespace
-
 void AutoAffineToHIRPass::runOnOperation() {
-  SmallVector<Operation *> toErase;
-  getOperation().walk<WalkOrder::PreOrder>(
-      [this, &toErase](Operation *operation) {
-        if (operation->getParentOp() == getOperation())
-          toErase.push_back(operation);
-        return WalkResult::advance();
-      });
+  /* SmallVector<Operation *> toErase;
+   getOperation().walk<WalkOrder::PreOrder>(
+       [this, &toErase](Operation *operation) {
+         if (operation->getParentOp() == getOperation())
+           toErase.push_back(operation);
+         return WalkResult::advance();
+       });
 
-  OpBuilder builder(getOperation());
-  builder.setInsertionPointToStart(
-      &*getOperation().getBodyRegion().getBlocks().begin());
-  // Copy the original module to an inner module.
-  auto originalModule =
-      dyn_cast<mlir::ModuleOp>(builder.clone(*getOperation()));
+   OpBuilder builder(getOperation());
+   builder.setInsertionPointToStart(
+       &*getOperation().getBodyRegion().getBlocks().begin());
+   // Copy the original module to an inner module.
+   auto originalModule =
+       dyn_cast<mlir::ModuleOp>(builder.clone(*getOperation()));
 
-  // Remove all original operations.
-  for (auto *operation : toErase)
-    operation->erase();
+   // Remove all original operations.
+   for (auto *operation : toErase)
+     operation->erase();
 
-  int lbl = 0;
-  originalModule.walk([this, &builder, &lbl](Operation *operation) {
-    if (auto op = dyn_cast<mlir::func::CallOp>(operation)) {
-      if (!op->hasAttrOfType<StringAttr>("hir.label"))
-        op->setAttr("hir.label", builder.getStringAttr(op.getCallee() + "_" +
-                                                       std::to_string(lbl++)));
-      mapLabelToCallOp[op->getAttrOfType<StringAttr>("hir.label").strref()] =
-          op;
-    }
-  });
+   int lbl = 0;
+   originalModule.walk([this, &builder, &lbl](Operation *operation) {
+     if (auto op = dyn_cast<mlir::func::CallOp>(operation)) {
+       if (!op->hasAttrOfType<StringAttr>("hir.label"))
+         op->setAttr("hir.label", builder.getStringAttr(op.getCallee() + "_" +
+                                                        std::to_string(lbl++)));
+       mapLabelToCallOp[op->getAttrOfType<StringAttr>("hir.label").strref()] =
+           op;
+     }
+   });
 
-  builder.setInsertionPointAfter(originalModule);
-  auto clonedModule = dyn_cast<mlir::ModuleOp>(builder.clone(*originalModule));
-  AffineToHIRImpl affineToHIRPass(clonedModule, this->dbg);
-  affineToHIRPass.runOnOperation();
-  originalModule->setAttr("affine.seq", builder.getUnitAttr());
-  clonedModule->setAttr("hir.par", builder.getUnitAttr());
-  DenseMap<StringRef, AccessInfo> mapLabelToAccessInfo;
-  clonedModule->walk([&mapLabelToAccessInfo](hir::FuncOp op) {
-    OpFusionAnalysis opFusionAnalysis(op);
-    opFusionAnalysis.getAnalysis(mapLabelToAccessInfo);
-  });
+   builder.setInsertionPointAfter(originalModule);
+   auto clonedModule = dyn_cast<mlir::ModuleOp>(builder.clone(*originalModule));
+   AffineToHIRImpl affineToHIRPass(clonedModule, this->dbg);
+   affineToHIRPass.runOnOperation();
+   originalModule->setAttr("affine.seq", builder.getUnitAttr());
+   clonedModule->setAttr("hir.par", builder.getUnitAttr());
+   DenseMap<StringRef, AccessInfo> mapLabelToAccessInfo;
+   clonedModule->walk([&mapLabelToAccessInfo](hir::FuncOp op) {
+     OpFusionAnalysis opFusionAnalysis(op);
+     opFusionAnalysis.getAnalysis(mapLabelToAccessInfo);
+   });
 
-  for (auto it : mapLabelToAccessInfo) {
-    mapLabelToCallOp[it.getFirst()]->setAttr("access_info",
-                                             it.getSecond().intoAttr(builder));
-  }
+   for (auto it : mapLabelToAccessInfo) {
+     mapLabelToCallOp[it.getFirst()]->setAttr("access_info",
+                                              it.getSecond().intoAttr(builder));
+   }*/
 }
 
 //-----------------------------------------------------------------------------

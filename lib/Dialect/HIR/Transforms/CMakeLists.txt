@@ -10,7 +10,7 @@ add_circt_dialect_library(CIRCTHIRTransforms
   SimplifyCtrlUtils.cpp
   VerifySchedulePass.cpp
   PassRegistration.cpp
-  OpFusionPass.cpp
+  #OpFusionPass.cpp
 
   DEPENDS
   CIRCTHIR

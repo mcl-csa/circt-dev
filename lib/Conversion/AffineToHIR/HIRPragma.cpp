@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "circt/Conversion/HIRPragma.h"
 #include "../PassDetail.h"
+#include "circt/Conversion/HIRPragma.h"
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
@@ -576,7 +576,8 @@ LogicalResult HIRPragma::visitArithFOp(Operation *operation) {
   auto arithCallOp = builder.create<mlir::func::CallOp>(
       operation->getLoc(), funcDecl, operation->getOperands());
   operation->replaceAllUsesWith(arithCallOp);
-  visitOp(arithCallOp);
+  if (failed(visitOp(arithCallOp)))
+    return failure();
   toErase.push_back(operation);
   return success();
 }
