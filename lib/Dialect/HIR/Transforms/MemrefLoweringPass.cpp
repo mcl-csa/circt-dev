@@ -350,6 +350,8 @@ LogicalResult MemrefLoweringPass::visitOp(hir::LoadOp op) {
                   .getValue();
   auto *memoryInterface =
       memrefInfo.getInterface(op.mem(), op.port().getValue(), bank);
+  if (!memoryInterface)
+    return op.emitError("Could not find memory info!");
 
   mlir::OpBuilder builder(op.getContext());
   builder.setInsertionPoint(op);
@@ -380,6 +382,9 @@ LogicalResult MemrefLoweringPass::visitOp(hir::StoreOp op) {
                   .getValue();
   auto *memoryInterface =
       memrefInfo.getInterface(op.mem(), op.port().getValue(), bank);
+  if (!memoryInterface)
+    return op.emitError("Could not find memory info! ")
+           << "{port:" << op.port().getValue() << ", bank:" << bank << "}.";
 
   mlir::OpBuilder builder(op.getContext());
   builder.setInsertionPoint(op);
@@ -504,7 +509,7 @@ LogicalResult MemrefLoweringPass::visitOp(hir::AllocaOp op) {
                                   memoryInterfacesPerBankPerPort[bank],
                                   op.mem_kind(), memVerilogName, memName,
                                   instanceName, getRegionTimeVar(op))))
-      return failure();
+      return op.emitError("Failed to emit memory instance.");
   }
 
   // Associate the memory interfaces with the memref in memInfo.
