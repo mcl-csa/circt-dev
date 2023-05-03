@@ -17,6 +17,14 @@ def OptBitWidth : Pass<"hir-opt-bitwidth", "hir::FuncOp"> {
   let dependentDialects = ["hir::HIRDialect"];
 }
 
+def OptDelay : Pass<"hir-opt-delay", "hir::FuncOp"> {
+  let summary = ".";
+  let description = [{This pass hir.delay (and thus shiftreg/LUT) if the enclosing scope has large initiation interval.}];
+
+  let constructor = "circt::hir::createOptDelayPass()";
+  let dependentDialects = ["hir::HIRDialect"];
+}
+
 def OptTime : Pass<"hir-opt-time", "hir::FuncOp"> {
   let summary = ".";
   let description = [{This pass reduces time offset related shift register usage.}];

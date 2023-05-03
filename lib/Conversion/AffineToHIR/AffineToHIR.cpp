@@ -366,7 +366,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineForOp op) {
             builder.getI64IntegerAttr(loopII));
         return nextIterOp;
       });
-
+  forOp->setAttr("initiation_interval", builder.getI64IntegerAttr(loopII));
   auto *forOpBodyBlk = forOp.getInductionVar().getParentBlock();
   valueConverter.mapValueToHIRValue(
       op.getInductionVar(),

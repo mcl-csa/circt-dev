@@ -23,7 +23,7 @@ def ForOp : HIR_Op<"for", [SingleBlock, RecursiveSideEffects,
 
        let arguments = (ins AnyType: $lb, AnyType: $ub, AnyType:
              $step,Variadic<AnyType>:$iter_args, OptionalAttr<ArrayAttr>: $iter_arg_delays,
-             HIR_TimeType :$tstart, I64Attr : $offset);
+             HIR_TimeType :$tstart, I64Attr : $offset, OptionalAttr<I64Attr> : $initiation_interval);
        let regions = (region SizedRegion<1>:$body);
        let results = (outs Variadic<AnyType>:$iterResults, HIR_TimeType:$t_end);
 

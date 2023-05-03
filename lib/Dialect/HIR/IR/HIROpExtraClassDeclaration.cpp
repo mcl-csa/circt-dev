@@ -243,13 +243,9 @@ Optional<int64_t> ForOp::getTripCount() {
 }
 
 Optional<int64_t> ForOp::getInitiationInterval() {
-  auto nextIterOp = dyn_cast<hir::NextIterOp>(
-      this->getLoopBody().getBlocks().front().getTerminator());
-  auto time = nextIterOp.getStartTime();
-  if (time.getTimeVar() != this->getIterTimeVar()) {
+  if (!this->initiation_interval())
     return llvm::None;
-  }
-  return time.getOffset();
+  return this->initiation_interval().getValue();
 }
 
 // ScheduledOp interface.

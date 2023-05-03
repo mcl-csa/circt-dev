@@ -18,6 +18,7 @@ namespace hir {
 
 std::unique_ptr<OperationPass<hw::HWModuleOp>> createFuseHWInstPass();
 std::unique_ptr<OperationPass<hir::FuncOp>> createOptBitWidthPass();
+std::unique_ptr<OperationPass<hir::FuncOp>> createOptDelayPass();
 std::unique_ptr<OperationPass<hir::FuncOp>> createOptTimePass();
 std::unique_ptr<OperationPass<hir::FuncOp>> createSimplifyCtrlPass();
 std::unique_ptr<OperationPass<mlir::ModuleOp>> createMemrefLoweringPass();
