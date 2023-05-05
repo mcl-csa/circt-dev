@@ -129,7 +129,7 @@ hw::InstanceOp HIRToHWPass::getOrCreateHWInstanceOp(
 LogicalResult HIRToHWPass::visitOp(hir::BusOp op) {
   // Add a placeholder SSA Var for the buses. CallOp visit will replace them.
   // We need to do this because HW dialect does not have SSA dominance.
-  auto *constantXOp = getConstantX(*builder, op.getType());
+  auto *constantXOp = constantX(*builder, op.getType());
   auto placeHolderSSAVar = constantXOp->getResult(0);
   auto name = helper::getOptionalName(constantXOp, 0);
   if (name)
@@ -309,9 +309,9 @@ LogicalResult HIRToHWPass::visitOp(hir::WhileOp op) {
 
   // Placeholder values.
   auto tstartNextIterOp =
-      getConstantX(*builder, builder->getI1Type())->getResult(0);
+      constantX(*builder, builder->getI1Type())->getResult(0);
   auto conditionNextIterOp =
-      getConstantX(*builder, builder->getI1Type())->getResult(0);
+      constantX(*builder, builder->getI1Type())->getResult(0);
 
   auto tNextBegin = builder->create<comb::AndOp>(builder->getUnknownLoc(),
                                                  tstartBegin, conditionBegin);
@@ -335,8 +335,7 @@ LogicalResult HIRToHWPass::visitOp(hir::WhileOp op) {
   SmallVector<Value> placeholderIterArgs;
   for (size_t i = 0; i < op.iter_args().size(); i++) {
     auto iterArg = op.iter_args()[i];
-    auto backwardIterArg =
-        getConstantX(*builder, iterArg.getType())->getResult(0);
+    auto backwardIterArg = constantX(*builder, iterArg.getType())->getResult(0);
     placeholderIterArgs.push_back(backwardIterArg);
     auto forwardIterArg = mapHIRToHWValue.lookup(iterArg);
     mapHIRToHWValue.map(op.body().front().getArgument(i),
@@ -448,7 +447,7 @@ LogicalResult HIRToHWPass::visitOp(hir::BusSendOp op) {
     defaultValue = builder->create<hw::ConstantOp>(
         builder->getUnknownLoc(), defaultAttr.dyn_cast<IntegerAttr>());
   } else {
-    defaultValue = getConstantX(*builder, value.getType())->getResult(0);
+    defaultValue = constantX(*builder, value.getType())->getResult(0);
   }
   auto newBus = builder->create<comb::MuxOp>(
       builder->getUnknownLoc(), value.getType(), tstart, value, defaultValue);
@@ -483,7 +482,7 @@ void HIRToHWPass::updateHIRToHWMapForFuncInputs(
       if (funcArgs[i].getType().isa<hir::BusType>())
         mapHIRToHWValue.map(
             funcArgs[i],
-            getConstantX(*builder, funcArgs[i].getType())->getResult(0));
+            constantX(*builder, funcArgs[i].getType())->getResult(0));
       else if (funcArgs[i].getType().isa<hir::BusTensorType>())
         mapHIRToHWValue.map(funcArgs[i],
                             getConstantXArray(*builder, funcArgs[i].getType(),

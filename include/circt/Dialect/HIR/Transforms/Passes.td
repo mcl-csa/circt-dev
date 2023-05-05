@@ -37,7 +37,7 @@ def SimplifyCtrl : Pass<"hir-simplify-ctrl", "hir::FuncOp"> {
   let summary = "Simplifies ForOp and IfOp.";
 
   let constructor = "circt::hir::createSimplifyCtrlPass()";
-  let dependentDialects = ["circt::hw::HWDialect","circt::comb::CombDialect"];
+  let dependentDialects = ["circt::hw::HWDialect","circt::sv::SVDialect","circt::comb::CombDialect"];
 }
 
 def MemrefLowering : Pass<"hir-lower-memref", "mlir::ModuleOp"> {
