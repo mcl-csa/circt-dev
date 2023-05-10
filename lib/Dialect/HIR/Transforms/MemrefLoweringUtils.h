@@ -497,6 +497,5 @@ LogicalResult emitMemoryInstance(OpBuilder &builder, hir::MemrefType memrefTy,
                                  MemKindEnum memKind,
                                  llvm::StringRef verilogName,
                                  llvm::StringRef memName,
-                                 llvm::Optional<std::string> instanceName,
-                                 Value tstart);
+                                 std::string instanceName, Value tstart);
 Value getRegionTimeVar(Operation *);

@@ -511,16 +511,13 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::CallOp op) {
   }
   StringAttr instanceName;
   if (op->hasAttrOfType<StringAttr>("instance_name"))
-    instanceName = op->getAttrOfType<StringAttr>("instance_name");
+    instanceName = builder.getStringAttr(
+        op->getAttrOfType<StringAttr>("instance_name").str() + "_inst" +
+        std::to_string(this->instNum++));
   else {
-    // The loop ensures that the instance name is not used before.
-    // Same instance name may have been defined previously explicity using the
-    // instance_name attr.
-    do {
-      auto id = mapFuncNameToInstanceID[op.getCallee()]++;
-      instanceName = builder.getStringAttr(op.getCalleeAttr().getValue() + "_" +
-                                           std::to_string(id));
-    } while (mapFuncNameToInstanceNames[op.getCallee()].contains(instanceName));
+    instanceName =
+        builder.getStringAttr(op.getCalleeAttr().getValue() + "_inst" +
+                              std::to_string(this->instNum++));
   }
 
   auto callOp = builder.create<hir::CallOp>(
@@ -577,8 +574,9 @@ LogicalResult AffineToHIRImpl::visitFFIOp(Operation *operation) {
   }
   auto callOp = builder.create<hir::CallOp>(
       operation->getLoc(), getHIRValueTypes(operation->getResultTypes()),
-      builder.getStringAttr(hirFuncAttr.getValue()), hirFuncAttr,
-      hirFuncExternOp.funcTyAttr(), operands, tRegion, offsetAttr);
+      builder.getStringAttr(hirFuncAttr.getValue().str() + "_inst" +
+                            std::to_string(this->instNum++)),
+      hirFuncAttr, hirFuncExternOp.funcTyAttr(), operands, tRegion, offsetAttr);
   assert(callOp->getNumResults() == operation->getNumResults());
   auto resultDelays = operation->getAttrOfType<ArrayAttr>("result_delays");
   if (!resultDelays && callOp->getNumResults() > 0) {

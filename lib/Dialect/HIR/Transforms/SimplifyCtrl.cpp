@@ -93,8 +93,8 @@ LogicalResult SimplifyCtrlPass::visitOp(ForOp forOp) {
       builder.getI64IntegerAttr(0));
 
   auto conditionAndIV =
-      insertForOpEntryLogic(builder, isFirstIter, forOp.lb(), forOp.ub(),
-                            forOp.step(), whileOp.getIterTimeVar());
+      insertForOpStateMachine(builder, isFirstIter, forOp.lb(), forOp.ub(),
+                              forOp.step(), whileOp.getIterTimeVar());
   auto condition = conditionAndIV.first;
   auto iv = conditionAndIV.second;
 

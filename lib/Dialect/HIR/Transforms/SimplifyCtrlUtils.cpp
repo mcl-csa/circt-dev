@@ -58,7 +58,7 @@ hw::HWModuleOp emitForOPStateMachineModule(OpBuilder &builder, Type ivTy) {
                       .direction = hw::PortDirection::INPUT,
                       .type = builder.getI1Type(),
                       .argNum = 5});
-  modPorts.push_back({.name = builder.getStringAttr("clk"),
+  modPorts.push_back({.name = builder.getStringAttr("rst"),
                       .direction = hw::PortDirection::INPUT,
                       .type = builder.getI1Type(),
                       .argNum = 6});
@@ -108,20 +108,29 @@ hw::HWModuleOp emitForOPStateMachineModule(OpBuilder &builder, Type ivTy) {
 
   auto nextIterCondition = builder.create<comb::ICmpOp>(
       uLoc,
-      ivWide.getType().isSignedInteger() ? comb::ICmpPredicate::slt
-                                         : comb::ICmpPredicate::ult,
+      ivWide.getType().isSignedInteger() ? comb::ICmpPredicate::sge
+                                         : comb::ICmpPredicate::uge,
       ivNext, ubWide);
 
-  auto bodyCtor = [&builder, &ivReg, &doneReg, &ivNext, &nextIterCondition] {
-    builder.create<sv::PAssignOp>(builder.getUnknownLoc(), ivReg.getResult(),
-                                  ivNext);
-    builder.create<sv::PAssignOp>(builder.getUnknownLoc(), doneReg.getResult(),
-                                  nextIterCondition);
+  auto regEnable =
+      builder.create<comb::OrOp>(builder.getUnknownLoc(), start, next);
+
+  auto bodyCtor = [&builder, &ivReg, &doneReg, &ivNext, &nextIterCondition,
+                   &regEnable] {
+    builder.create<sv::IfOp>(
+        builder.getUnknownLoc(), regEnable,
+        [&builder, &ivReg, &doneReg, &ivNext, &nextIterCondition] {
+          builder.create<sv::PAssignOp>(builder.getUnknownLoc(),
+                                        ivReg.getResult(), ivNext);
+          builder.create<sv::PAssignOp>(builder.getUnknownLoc(),
+                                        doneReg.getResult(), nextIterCondition);
+        });
   };
 
-  auto resetCtor = [&builder, &ivReg, &ivRegOut, &doneReg, &zeroBit] {
+  auto xValue = getConstantX(builder, ivRegOut.getType());
+  auto resetCtor = [&builder, &ivReg, &doneReg, &zeroBit, &xValue] {
     builder.create<sv::PAssignOp>(builder.getUnknownLoc(), ivReg.getResult(),
-                                  getConstantX(builder, ivRegOut.getType()));
+                                  xValue);
     builder.create<sv::PAssignOp>(builder.getUnknownLoc(), doneReg.getResult(),
                                   zeroBit);
   };
@@ -145,10 +154,10 @@ hw::HWModuleOp emitForOPStateMachineModule(OpBuilder &builder, Type ivTy) {
   return moduleOp;
 }
 
-std::pair<Value, Value> insertForOpEntryLogic(OpBuilder &builder,
-                                              Value isFirstIter, Value lb,
-                                              Value ub, Value step,
-                                              Value tstartLoopBody) {
+std::pair<Value, Value> insertForOpStateMachine(OpBuilder &builder,
+                                                Value isFirstIter, Value lb,
+                                                Value ub, Value step,
+                                                Value tstartLoopBody) {
   static int n = 0;
   auto module = emitForOPStateMachineModule(builder, lb.getType());
   auto next = builder

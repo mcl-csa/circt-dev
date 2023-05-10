@@ -101,7 +101,7 @@ def NextIterOp : HIR_Op<"next_iter", [AttrSizedOperandSegments,
 
              Example:
 
-             ```mlir hir.next_iter condition %continue at %t```
+             ```mlir hir.next_iter break %continue at %t```
              ```mlir hir.next_iter at %t```
        }];
 
@@ -110,7 +110,7 @@ def NextIterOp : HIR_Op<"next_iter", [AttrSizedOperandSegments,
 
        let results = (outs );
        let hasCanonicalizeMethod = true;
-       let assemblyFormat = [{ (`condition` $condition^)? (`iter_args` `(`$iter_args^ `)`)? `at` custom<TimeAndOffset>($tstart ,$offset) attr-dict (`:` `(` type($iter_args)^ `)`)? }];
+       let assemblyFormat = [{ (`break` $condition^)? (`iter_args` `(`$iter_args^ `)`)? `at` custom<TimeAndOffset>($tstart ,$offset) attr-dict (`:` `(` type($iter_args)^ `)`)? }];
        let hasVerifier=1;
 
 }

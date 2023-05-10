@@ -23,10 +23,10 @@ hir.func @gesummv_hir at %t(
   %c4_i5 = hw.constant 4:i5
   %c5_i5 = hw.constant 5:i5
   %c6_i5 = hw.constant 6:i5
-  %c8_i5 = hw.constant 7:i5
+  %c8_i5 = hw.constant 8:i5
 
 
-  hir.for %i :i5 = %c0_i5  to %c8_i5 step %c1_i5  iter_time(%ti = %t  +  1 ){
+  hir.for %i :i5 = %c0_i5  to %c8_i5 step %c1_i5  iter_time(%ti = %t){
     %tmpreg = hir.alloca reg  :!hir.memref<(bank 1)xi32> ports [#reg_r, #reg_w]
     %yreg = hir.alloca reg  :!hir.memref<(bank 1)xi32> ports [#reg_r, #reg_w]
 
@@ -36,7 +36,7 @@ hir.func @gesummv_hir at %t(
       : !hir.memref<(bank 1)xi32> delay 1
     
     %i_i3 = comb.extract %i from 0 :(i5)->(i3)
-    %tf=hir.for %j :i5 = %c0_i5  to %c8_i5  step %c1_i5  iter_time(%tj = %ti  +  1 ){
+    %tf=hir.for %j :i5 = %c0_i5  to %c8_i5  step %c1_i5  iter_time(%tj = %ti){
         %j_i3 = comb.extract %j from 0 :(i5)->(i3)
         %a_i_j = hir.load %A[port 0][%i_i3,%j_i3] at %tj
         : !hir.memref<8x8xi32> delay 1
@@ -64,7 +64,7 @@ hir.func @gesummv_hir at %t(
     }
     %tmp_in = hir.load %tmpreg[port 0][%0] at %tf + 5
       :!hir.memref<(bank 1)xi32> delay 0
-    %i_i3_delayed = hir.delay %i_i3 by 5 at %tf : i3
+    %i_i3_delayed = hir.delay %i_i3 by 13 at %ti : i3
     hir.store %tmp_in to %tmp[port 0][%i_i3_delayed] at %tf + 5 
       : !hir.memref<8xi32> delay 1
     %y = hir.load %yreg[port 0][%0] at %tf + 5
@@ -75,7 +75,7 @@ hir.func @gesummv_hir at %t(
       : !hir.func<(i32,i32)->(i32 delay 4)>
     %y_next = comb.add %alpha_tmp, %beta_y : i32 
 
-    %i9 = hir.delay %i_i3 by 9 at %ti : i3
+    %i9 = hir.delay %i_i3 by 17 at %ti : i3
     hir.store %y_next to %Y[port 0][%i9] at %tf + 9
       : !hir.memref<8xi32> delay 1
 
