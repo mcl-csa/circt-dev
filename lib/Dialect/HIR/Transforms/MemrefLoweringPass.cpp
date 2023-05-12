@@ -42,6 +42,7 @@ private:
   MemrefInfo memrefInfo;
   SmallVector<Operation *, 10> opsToErase;
   Optional<OpBuilder> topLevelBuilder;
+  int instNum = 0;
 };
 } // end anonymous namespace
 
@@ -499,12 +500,15 @@ LogicalResult MemrefLoweringPass::visitOp(hir::AllocaOp op) {
   for (auto bank = 0; bank < memrefTy.getNumBanks(); bank++) {
     auto memName = createHWMemoryName(op.mem_kind(), memrefTy, op.ports());
     auto memVerilogName = createVerilogMemoryName(op.mem_kind(), op.ports());
-    Optional<std::string> instanceName;
+    std::string instanceName;
     auto resultName = helper::getOptionalName(op);
     if (resultName) {
       instanceName =
           resultName.getValue().str() + "_bank" + std::to_string(bank);
+    } else {
+      instanceName = memName;
     }
+    instanceName = instanceName + "_inst" + std::to_string(instNum++);
     if (failed(emitMemoryInstance(builder, memrefTy,
                                   memoryInterfacesPerBankPerPort[bank],
                                   op.mem_kind(), memVerilogName, memName,
