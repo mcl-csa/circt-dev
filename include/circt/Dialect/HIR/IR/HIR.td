@@ -18,5 +18,6 @@ include "HIRMemOps.td"
 include "HIRTimeOps.td"
 include "HIRMiscOps.td"
 include "HIRBusOps.td"
+include "HIRWireOps.td"
 
 #endif // HIR_TD
