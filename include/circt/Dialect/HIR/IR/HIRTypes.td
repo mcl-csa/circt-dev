@@ -90,4 +90,17 @@ def HIR_BusTensorType : HIRDialect_Type<"BusTensor", "bus_tensor"> {
   }];
 }
 
+def HIR_WireType : HIRDialect_Type<"Wire", "wire"> {
+  let summary = "Represents a wire in the hardware.";
+  let description = [{
+    This type is designed to circumvent the restriction of SSA dominance.
+    A wire can have only one driver/writer and multiple readers.
+    Wires are not allowed in function arguments/results and loop iter_args.
+
+    Syntax: !hir.wire<i32>
+  }];
+
+  let parameters = (ins "IntegerType":$elementType);
+  let assemblyFormat = "`<`$elementType`>`";
+}
 #endif
