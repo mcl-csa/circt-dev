@@ -9,7 +9,6 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/FunctionImplementation.h"
-#include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/PatternMatch.h"
 #include <stack>
 #include <string>
@@ -176,11 +175,6 @@ llvm::Optional<int64_t> extractDelayFromDict(mlir::DictionaryAttr dict) {
         return intAttr.getInt();
   return llvm::None;
 }
-mlir::arith::ConstantOp emitConstantOp(mlir::OpBuilder &builder,
-                                       int64_t value) {
-  return builder.create<mlir::arith::ConstantOp>(builder.getUnknownLoc(),
-                                                 builder.getIndexAttr(value));
-}
 
 llvm::Optional<ArrayAttr>
 extractMemrefPortsFromDict(mlir::DictionaryAttr dict) {
@@ -190,14 +184,6 @@ extractMemrefPortsFromDict(mlir::DictionaryAttr dict) {
       .getValue()
       .getValue()
       .dyn_cast<ArrayAttr>();
-}
-
-ArrayAttr getPortAttrForReg(Builder &builder) {
-  auto rdPort = builder.getDictionaryAttr(
-      builder.getNamedAttr("rd_latency", builder.getI64IntegerAttr(0)));
-  auto wrPort = builder.getDictionaryAttr(
-      builder.getNamedAttr("wr_latency", builder.getI64IntegerAttr(1)));
-  return builder.getArrayAttr({rdPort, wrPort});
 }
 
 llvm::Optional<int64_t> getMemrefPortRdLatency(Attribute port) {

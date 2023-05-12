@@ -336,8 +336,6 @@ public:
            "There must be atleast one port for a memref.");
     for (size_t port = 0; port < mapPortBankToMemoryInterface.size(); port++) {
       auto mapBankToMemoryInterface = mapPortBankToMemoryInterface[port];
-      assert(mapBankToMemoryInterface.size() > 0 &&
-             "There must be atleast one bank for a memref.");
       for (size_t bank = 0; bank < mapBankToMemoryInterface.size(); bank++) {
         auto memoryInterface = mapBankToMemoryInterface[bank];
         mapMemrefPortBank2MemoryInterface.map(std::make_tuple(mem, port, bank),
@@ -366,10 +364,8 @@ public:
   size_t getNumBanks(Value mem) { return mapMemrefToNumBanks.lookup(mem); }
 
   MemoryInterface *getInterface(Value mem, int64_t port, int64_t bank) {
-    auto loc = mapMemrefPortBank2MemoryInterface.lookupOr(
-        std::make_tuple(mem, port, bank), memoryInterfaces.size());
-    if (loc == memoryInterfaces.size())
-      return nullptr;
+    auto loc = mapMemrefPortBank2MemoryInterface.lookup(
+        std::make_tuple(mem, port, bank));
     return &memoryInterfaces[loc];
   }
 
@@ -497,5 +493,6 @@ LogicalResult emitMemoryInstance(OpBuilder &builder, hir::MemrefType memrefTy,
                                  MemKindEnum memKind,
                                  llvm::StringRef verilogName,
                                  llvm::StringRef memName,
-                                 std::string instanceName, Value tstart);
+                                 llvm::Optional<std::string> instanceName,
+                                 Value tstart);
 Value getRegionTimeVar(Operation *);

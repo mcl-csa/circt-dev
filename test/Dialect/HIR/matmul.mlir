@@ -3,7 +3,7 @@
 #reg_r = {"rd_latency"=0}
 #bram_w = {"wr_latency"=1}
 #reg_w = {"wr_latency"=1}
-hir.func.extern @mult at %t (%a:i32, %b:i32) -> (%result:i32 delay 2){argNames=["a","b","t"],resultNames=["result"]}
+hir.func.extern @mult at %t (%a:i32, %b:i32) -> (%result:i32 delay 2)
 
 //hir.func.extern @readA at %t(
 //  %Ai :!hir.memref<16x16xi32> ports [#bram_r],
@@ -36,7 +36,7 @@ hir.func @readA at %t(
     hir.next_iter at %tk_end + 1
   }
   hir.return
-}{argNames=["Ai","Aw","t"]}
+}
 
 //hir.func.extern @readB at %t(
 //  %Bi : !hir.memref<16x16xi32> ports [#bram_r], 
@@ -55,7 +55,7 @@ hir.func @readB at %t(
     %c4_i5 = hw.constant 4:i5 
 
   //Write to register array B.
-  %buff = hir.alloca reg  : !hir.memref<(bank 1)xi32> ports [#reg_r, #reg_w]
+  %buff = hir.alloca "reg"  : !hir.memref<(bank 1)xi32> ports [#reg_r, #reg_w]
 
   hir.for %j : i5 = %c0_i5 to %c16_i5 step %c1_i5 iter_time(%tj = %t + 1){
     %tk_end =hir.for %k : i5 = %c0_i5 to %c16_i5 step %c1_i5 iter_time(%tk = %tj + 1){
@@ -83,7 +83,7 @@ hir.func @readB at %t(
     hir.next_iter at %tk_end + 1
   }
   hir.return (%t_exec) : (!hir.time)
-}{argNames=["Bi","Bw","t"],resultNames=["t_done"]} 
+} 
 
 hir.func @kernel at %t(
   %A : !hir.memref<16x(bank 16)xi32> ports [#bram_r],
@@ -101,7 +101,7 @@ hir.func @kernel at %t(
     %c0_i32 = hw.constant 0:i32 
 
    hir.for %i : i5 = %c0_i5  to %c16_i5  step %c1_i5  iter_time(%ti = %t + 1){
-     %A_reg = hir.alloca reg  : !hir.memref<(bank 16)x(bank 16)xi32> ports[#reg_r,#reg_w]
+     %A_reg = hir.alloca "reg"  : !hir.memref<(bank 16)x(bank 16)xi32> ports[#reg_r,#reg_w]
      %i_i4 = comb.extract %i from 0 : (i5)->(i4)
      hir.for %k:index = %0 to %16 step %1 iter_args(%i_k = %i_i4:i4) iter_time(%tk = %ti){
        %a = hir.load %A[port 0][%i_k,%k] at %tk 
@@ -126,7 +126,7 @@ hir.func @kernel at %t(
      }
 
      hir.for %j :index = %0 to %16 step %1 iter_args(%i_j = %i_i4:i4) iter_time(%tj = %ti){
-      %C_reg = hir.alloca reg  : !hir.memref<(bank 17)xi32> ports[#reg_r,#reg_w]
+      %C_reg = hir.alloca "reg"  : !hir.memref<(bank 17)xi32> ports[#reg_r,#reg_w]
       hir.store %c0_i32 to %C_reg[port 1][%0] at %tj + 3 
       : !hir.memref<(bank 17)xi32> delay 1
       %i_k_end, %tk_end=hir.for %k:index = %0 to %16 step %1 iter_args(%i_k=%i_j:i4) iter_time(%tk = %tj){
@@ -134,7 +134,7 @@ hir.func @kernel at %t(
         : !hir.memref<(bank 16)x(bank 16)xi32> delay 0
         %b = hir.load %B[port 0][%k, %j] at %tk+2 
         : !hir.memref<(bank 16)x(bank 16)xi32> delay 0
-        %ab = hir.call "mul_1" @mult(%a, %b) at %tk + 2 : !hir.func<(i32, i32) -> (i32 delay 2)>
+        %ab = hir.call @mult(%a, %b) at %tk + 2 : !hir.func<(i32, i32) -> (i32 delay 2)>
         %c_prev = hir.load %C_reg[port 0][%k] at %tk + 4 
         : !hir.memref<(bank 17)xi32> delay 0
         hir.probe %a name "a" :i32
@@ -160,7 +160,7 @@ hir.func @kernel at %t(
     hir.next_iter at %ti + 1 
   } 
   hir.return 
-}{argNames=["A","B","C","t"]}
+}
 
 //hir.func.extern @writeC at %t(
 //  %Cr: !hir.memref<16x(bank 16)xi32> ports [#bram_r],
@@ -199,9 +199,9 @@ hir.func @matmul_hir at %t(
   %Bi : !hir.memref<16x16xi32> ports [#bram_r], 
   %Co : !hir.memref<16x16xi32> ports [#bram_w]) {
 
-  %A = hir.alloca bram  : !hir.memref<16x(bank 16)xi32> ports [#bram_r, #bram_w]
-  %B = hir.alloca reg  : !hir.memref<(bank 16)x(bank 16)xi32> ports [#reg_r,#reg_w]
-  %C = hir.alloca bram  : !hir.memref<16x(bank 16)xi32> ports [#bram_r,#bram_w]
+  %A = hir.alloca "bram"  : !hir.memref<16x(bank 16)xi32> ports [#bram_r, #bram_w]
+  %B = hir.alloca "reg"  : !hir.memref<(bank 16)x(bank 16)xi32> ports [#reg_r,#reg_w]
+  %C = hir.alloca "bram"  : !hir.memref<16x(bank 16)xi32> ports [#bram_r,#bram_w]
   %Ar = hir.memref.extract %A[port 0] :!hir.memref<16x(bank 16)xi32> port [#bram_r]
   %Aw = hir.memref.extract %A[port 1] :!hir.memref<16x(bank 16)xi32> port [#bram_w]
   %Br = hir.memref.extract %B[port 0] :!hir.memref<(bank 16)x(bank 16)xi32> port [#reg_r]
@@ -209,20 +209,20 @@ hir.func @matmul_hir at %t(
   %Cr = hir.memref.extract %C[port 0] :!hir.memref<16x(bank 16)xi32> port [#bram_r]
   %Cw = hir.memref.extract %C[port 1] :!hir.memref<16x(bank 16)xi32> port [#bram_w]
   
-  hir.call "read_A" @readA(%Ai,%Aw) at %t
-  :!hir.func<(!hir.memref<16x16xi32> ports [#bram_r],!hir.memref<16x(bank 16)xi32> ports [#bram_w])->()>
+  hir.call @readA(%Ai,%Aw) at %t
+  :!hir.func<(!hir.memref<16x16xi32> ports [#bram_r],!hir.memref<16x(bank 16)xi32> ports [#bram_w])>
 
-  %t_exec = hir.call "read_B" @readB(%Bi,%Bw) at %t 
+  %t_exec = hir.call @readB(%Bi,%Bw) at %t 
   :!hir.func<(!hir.memref<16x16xi32> ports [#bram_r],!hir.memref<(bank 16)x(bank 16)xi32> ports [#reg_w]) -> (!hir.time)>
 
-  hir.call "kernel" @kernel(%Ar,%Br,%Cw) at %t_exec 
+  hir.call @kernel(%Ar,%Br,%Cw) at %t_exec 
   : !hir.func<(!hir.memref<16x(bank 16)xi32> ports [#bram_r],
     !hir.memref<(bank 16)x(bank 16)xi32> ports [#reg_r],
-    !hir.memref<16x(bank 16)xi32> ports [#bram_w])->()>
+    !hir.memref<16x(bank 16)xi32> ports [#bram_w])>
 
   %t_rd = hir.time %t_exec + 32 : !hir.time 
-  hir.call "write_c" @writeC(%Cr,%Co) at %t_rd 
-    :!hir.func<(!hir.memref<16x(bank 16)xi32> ports [#bram_r], !hir.memref<16x16xi32> ports [#bram_w])->()>
+  hir.call @writeC(%Cr,%Co) at %t_rd 
+    :!hir.func<(!hir.memref<16x(bank 16)xi32> ports [#bram_r], !hir.memref<16x16xi32> ports [#bram_w])>
 
   hir.return
 }

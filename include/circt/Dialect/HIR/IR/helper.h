@@ -3,7 +3,6 @@
 
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/MLIRContext.h"
@@ -42,10 +41,8 @@ llvm::Optional<int64_t> calcLinearIndex(mlir::ArrayRef<mlir::Value> indices,
                                         mlir::ArrayRef<int64_t> dims);
 
 llvm::Optional<int64_t> extractDelayFromDict(mlir::DictionaryAttr dict);
-mlir::arith::ConstantOp emitConstantOp(mlir::OpBuilder &builder, int64_t value);
 llvm::Optional<mlir::ArrayAttr>
 extractMemrefPortsFromDict(mlir::DictionaryAttr dict);
-mlir::ArrayAttr getPortAttrForReg(mlir::Builder &builder);
 llvm::Optional<int64_t> getMemrefPortRdLatency(mlir::Attribute port);
 llvm::Optional<int64_t> getMemrefPortWrLatency(mlir::Attribute port);
 bool isMemrefWrPort(mlir::Attribute port);

@@ -34,7 +34,7 @@ FuncToHWModulePortMap getHWModulePortMap(OpBuilder &builder,
                                          ArrayAttr inputNames,
                                          ArrayAttr resultNames);
 void copyHIRAttrs(hir::CallOp, hw::InstanceOp);
-Operation *constantX(OpBuilder &, Type);
+Operation *getConstantX(OpBuilder &, Type);
 Operation *
 getConstantXArray(OpBuilder &builder, Type hwTy,
                   DenseMap<Value, SmallVector<Value>> &mapArrayToElements);

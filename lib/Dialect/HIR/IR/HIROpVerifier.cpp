@@ -1,6 +1,4 @@
-#include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/helper.h"
-#include "circt/Support/LLVM.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/SetVector.h"
 using namespace circt;
@@ -127,23 +125,6 @@ LogicalResult FuncOp::verify() {
   return success();
 }
 
-LogicalResult checkIndices(Location loc, OperandRange indices,
-                           MemrefType memTy) {
-  if (memTy.getShape().size() != indices.size())
-    return mlir::emitError(loc)
-           << "Wrong number of dimensions while indexing memory.";
-  for (size_t i = 0; i < indices.size(); i++) {
-    auto constIdx = helper::getConstantIntValue(indices[i]);
-    if (!constIdx)
-      continue;
-    if (!(memTy.getShape()[i] > *constIdx))
-      return emitError(loc) << "Constant index is out-of-bounds!"
-                            << "{idx:" << *constIdx
-                            << ", dim-size:" << memTy.getShape()[i] << "}.";
-  }
-  return success();
-}
-
 LogicalResult AllocaOp::verify() {
   auto res = this->res();
   auto ports = this->ports();
@@ -158,10 +139,6 @@ LogicalResult AllocaOp::verify() {
                << "specified port is not a read port.";
     } else if (auto storeOp = dyn_cast<hir::StoreOp>(use.getOwner())) {
       auto port = storeOp.port();
-      if (failed(checkIndices(
-              storeOp->getLoc(), storeOp.indices(),
-              storeOp.mem().getType().dyn_cast<hir::MemrefType>())))
-        return failure();
       if (!port)
         continue;
       if (ports.getValue().size() <= port.getValue())

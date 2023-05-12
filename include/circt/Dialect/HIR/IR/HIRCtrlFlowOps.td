@@ -23,7 +23,7 @@ def ForOp : HIR_Op<"for", [SingleBlock, RecursiveSideEffects,
 
        let arguments = (ins AnyType: $lb, AnyType: $ub, AnyType:
              $step,Variadic<AnyType>:$iter_args, OptionalAttr<ArrayAttr>: $iter_arg_delays,
-             HIR_TimeType :$tstart, I64Attr : $offset, OptionalAttr<I64Attr> : $initiation_interval);
+             HIR_TimeType :$tstart, I64Attr : $offset);
        let regions = (region SizedRegion<1>:$body);
        let results = (outs Variadic<AnyType>:$iterResults, HIR_TimeType:$t_end);
 
@@ -101,7 +101,7 @@ def NextIterOp : HIR_Op<"next_iter", [AttrSizedOperandSegments,
 
              Example:
 
-             ```mlir hir.next_iter break %continue at %t```
+             ```mlir hir.next_iter condition %continue at %t```
              ```mlir hir.next_iter at %t```
        }];
 
@@ -110,7 +110,7 @@ def NextIterOp : HIR_Op<"next_iter", [AttrSizedOperandSegments,
 
        let results = (outs );
        let hasCanonicalizeMethod = true;
-       let assemblyFormat = [{ (`break` $condition^)? (`iter_args` `(`$iter_args^ `)`)? `at` custom<TimeAndOffset>($tstart ,$offset) attr-dict (`:` `(` type($iter_args)^ `)`)? }];
+       let assemblyFormat = [{ (`condition` $condition^)? (`iter_args` `(`$iter_args^ `)`)? `at` custom<TimeAndOffset>($tstart ,$offset) attr-dict (`:` `(` type($iter_args)^ `)`)? }];
        let hasVerifier=1;
 
 }

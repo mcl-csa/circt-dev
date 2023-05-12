@@ -6,12 +6,8 @@
 #include "circt/Conversion/HIRToHW.h"
 #include "../PassDetail.h"
 #include "HIRToHWUtils.h"
-#include "circt/Dialect/Comb/CombDialect.h"
-#include "circt/Dialect/Comb/CombOps.h"
-#include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWOps.h"
-#include "circt/Dialect/SV/SVDialect.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include <iostream>
@@ -49,8 +45,6 @@ private:
   LogicalResult visitOp(hir::DelayOp);
   LogicalResult visitOp(hir::FuncExternOp);
   LogicalResult visitOp(hir::FuncOp);
-  LogicalResult visitOp(hir::GetClockOp);
-  LogicalResult visitOp(hir::GetResetOp);
   LogicalResult visitOp(hir::IsFirstIterOp);
   LogicalResult visitOp(hir::NextIterOp);
   LogicalResult visitOp(hir::ProbeOp);
@@ -135,7 +129,7 @@ hw::InstanceOp HIRToHWPass::getOrCreateHWInstanceOp(
 LogicalResult HIRToHWPass::visitOp(hir::BusOp op) {
   // Add a placeholder SSA Var for the buses. CallOp visit will replace them.
   // We need to do this because HW dialect does not have SSA dominance.
-  auto *constantXOp = constantX(*builder, op.getType());
+  auto *constantXOp = getConstantX(*builder, op.getType());
   auto placeHolderSSAVar = constantXOp->getResult(0);
   auto name = helper::getOptionalName(constantXOp, 0);
   if (name)
@@ -315,23 +309,24 @@ LogicalResult HIRToHWPass::visitOp(hir::WhileOp op) {
 
   // Placeholder values.
   auto tstartNextIterOp =
-      constantX(*builder, builder->getI1Type())->getResult(0);
+      getConstantX(*builder, builder->getI1Type())->getResult(0);
   auto conditionNextIterOp =
-      constantX(*builder, builder->getI1Type())->getResult(0);
-  auto continueCondition = builder->create<comb::XorOp>(
-      builder->getUnknownLoc(), conditionNextIterOp, conditionTrue);
+      getConstantX(*builder, builder->getI1Type())->getResult(0);
+
   auto tNextBegin = builder->create<comb::AndOp>(builder->getUnknownLoc(),
                                                  tstartBegin, conditionBegin);
   auto tNextIter = builder->create<comb::AndOp>(
-      builder->getUnknownLoc(), tstartNextIterOp, continueCondition);
+      builder->getUnknownLoc(), tstartNextIterOp, conditionNextIterOp);
   Value const iterTimeVar =
       builder->create<comb::OrOp>(op.getLoc(), tNextBegin, tNextIter);
   auto notConditionBegin = builder->create<comb::XorOp>(
       builder->getUnknownLoc(), conditionBegin, conditionTrue);
+  auto notConditionIter = builder->create<comb::XorOp>(
+      builder->getUnknownLoc(), conditionNextIterOp, conditionTrue);
   auto tLastBegin = builder->create<comb::AndOp>(
       builder->getUnknownLoc(), tstartBegin, notConditionBegin);
   auto tLastIter = builder->create<comb::AndOp>(
-      builder->getUnknownLoc(), tstartNextIterOp, conditionNextIterOp);
+      builder->getUnknownLoc(), tstartNextIterOp, notConditionIter);
   auto tLast = builder->create<comb::OrOp>(op.getLoc(), tLastBegin, tLastIter);
   auto tLastName = helper::getOptionalName(op, 0);
   if (tLastName)
@@ -340,7 +335,8 @@ LogicalResult HIRToHWPass::visitOp(hir::WhileOp op) {
   SmallVector<Value> placeholderIterArgs;
   for (size_t i = 0; i < op.iter_args().size(); i++) {
     auto iterArg = op.iter_args()[i];
-    auto backwardIterArg = constantX(*builder, iterArg.getType())->getResult(0);
+    auto backwardIterArg =
+        getConstantX(*builder, iterArg.getType())->getResult(0);
     placeholderIterArgs.push_back(backwardIterArg);
     auto forwardIterArg = mapHIRToHWValue.lookup(iterArg);
     mapHIRToHWValue.map(op.body().front().getArgument(i),
@@ -452,7 +448,7 @@ LogicalResult HIRToHWPass::visitOp(hir::BusSendOp op) {
     defaultValue = builder->create<hw::ConstantOp>(
         builder->getUnknownLoc(), defaultAttr.dyn_cast<IntegerAttr>());
   } else {
-    defaultValue = constantX(*builder, value.getType())->getResult(0);
+    defaultValue = getConstantX(*builder, value.getType())->getResult(0);
   }
   auto newBus = builder->create<comb::MuxOp>(
       builder->getUnknownLoc(), value.getType(), tstart, value, defaultValue);
@@ -487,7 +483,7 @@ void HIRToHWPass::updateHIRToHWMapForFuncInputs(
       if (funcArgs[i].getType().isa<hir::BusType>())
         mapHIRToHWValue.map(
             funcArgs[i],
-            constantX(*builder, funcArgs[i].getType())->getResult(0));
+            getConstantX(*builder, funcArgs[i].getType())->getResult(0));
       else if (funcArgs[i].getType().isa<hir::BusTensorType>())
         mapHIRToHWValue.map(funcArgs[i],
                             getConstantXArray(*builder, funcArgs[i].getType(),
@@ -519,15 +515,6 @@ LogicalResult HIRToHWPass::visitOp(hir::FuncOp op) {
   auto visitResult = visitRegion(op.getFuncBody());
 
   return visitResult;
-}
-
-LogicalResult HIRToHWPass::visitOp(hir::GetClockOp op) {
-  op.getResult().replaceAllUsesWith(this->clk);
-  return success();
-}
-LogicalResult HIRToHWPass::visitOp(hir::GetResetOp op) {
-  op.getResult().replaceAllUsesWith(this->reset);
-  return success();
 }
 
 LogicalResult HIRToHWPass::visitOp(hir::BusTensorGetElementOp op) {
@@ -733,10 +720,6 @@ LogicalResult HIRToHWPass::visitOperation(Operation *operation) {
     return visitOp(op);
   if (auto op = dyn_cast<hir::DelayOp>(operation))
     return visitOp(op);
-  if (auto op = dyn_cast<hir::GetClockOp>(operation))
-    return visitOp(op);
-  if (auto op = dyn_cast<hir::GetResetOp>(operation))
-    return visitOp(op);
   if (auto op = dyn_cast<hir::TimeOp>(operation))
     return visitOp(op);
   if (auto op = dyn_cast<hir::WhileOp>(operation))
@@ -796,8 +779,7 @@ void HIRToHWPass::runOnOperation() {
   // erase unnecessary ops.
   SmallVector<Operation *> opsToErase;
   for (auto &operation : getOperation()) {
-    if (!isa<hw::HWDialect, sv::SVDialect, comb::CombDialect>(
-            operation.getDialect()))
+    if (!isa<hw::HWDialect>(operation.getDialect()))
       opsToErase.push_back(&operation);
   }
   helper::eraseOps(opsToErase);

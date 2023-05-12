@@ -31,7 +31,7 @@ std::unique_ptr<mlir::Pass> createAffineToHIR();
 class AffineToHIRImpl : HIRPassImplBase<mlir::ModuleOp> {
 public:
   AffineToHIRImpl(mlir::ModuleOp op, bool dbg)
-      : HIRPassImplBase(op), builder(op), dbg(dbg), instNum(0) {}
+      : HIRPassImplBase(op), builder(op), dbg(dbg) {}
   void runOnOperation();
 
 private:
@@ -64,7 +64,7 @@ private:
   std::stack<OpBuilder::InsertionGuard> insertionGuards;
   llvm::DenseMap<std::pair<Value, Region *>, Value> mapValueToRegionArg;
   bool dbg;
+  DenseMap<StringRef, int64_t> mapFuncNameToInstanceID;
   DenseMap<StringRef, DenseSet<StringRef>> mapFuncNameToInstanceNames;
-  int64_t instNum;
 };
 #endif // CIRCT_CONVERSION_AFFINETOHIR_H_

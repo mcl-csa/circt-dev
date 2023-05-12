@@ -181,9 +181,8 @@ struct Time {
   Value getTimeVar() const { return timeVar; }
   int64_t getOffset() const { return offset; }
   Time addOffset(int64_t extraOffset) const {
-    assert(extraOffset >= 0);
     auto newOffset = offset + extraOffset;
-    // assert(newOffset >= 0);
+    assert(newOffset >= 0);
     return Time(timeVar, newOffset);
   }
   bool operator==(Time const &rhs) {

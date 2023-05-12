@@ -1,7 +1,6 @@
 add_circt_dialect_library(CIRCTHIRTransforms
   FuseHWInstPass.cpp
   OptBitWidthPass.cpp
-  OptDelayPass.cpp
   OptTimePass.cpp
   LoopUnrollPass.cpp
   MemrefLoweringPass.cpp

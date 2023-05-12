@@ -289,7 +289,8 @@ LogicalResult emitMemoryInstance(OpBuilder &builder, hir::MemrefType memrefTy,
                                  MemKindEnum memKind,
                                  llvm::StringRef verilogName,
                                  llvm::StringRef memName,
-                                 std::string instanceName, Value tstart) {
+                                 llvm::Optional<std::string> instanceName,
+                                 Value tstart) {
 
   auto elementWidth = helper::getBitWidth(memrefTy.getElementType()).getValue();
   auto addrWidth = helper::clog2(memrefTy.getNumElementsPerBank());
@@ -341,7 +342,9 @@ LogicalResult emitMemoryInstance(OpBuilder &builder, hir::MemrefType memrefTy,
 
   Type const funcTy = hir::FuncType::get(builder.getContext(), inputBusTypes,
                                          inputBusAttrs, {}, {});
-  auto instanceNameAttr = builder.getStringAttr(instanceName);
+  auto instanceNameAttr = instanceName
+                              ? builder.getStringAttr(instanceName.getValue())
+                              : builder.getStringAttr(memName);
   auto calleeAttr = FlatSymbolRefAttr::get(builder.getContext(), memName);
   auto callOp = builder.create<hir::CallOp>(
       builder.getUnknownLoc(), SmallVector<Type>(), instanceNameAttr,

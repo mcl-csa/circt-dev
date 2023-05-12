@@ -28,32 +28,6 @@ Examples:
    let hasVerifier = 1;
 }
 
-def GetClockOp: HIR_Op<"get_clk",[NoSideEffect]>{
-   let summary = "Get the clock corresponding to a time variable.";
-   let description = [{
-Example:
-      ```mlir %clk = hir.get_clk %t : i1```
-   }];
-
-   let arguments = (ins HIR_TimeType: $input);
-   let results = (outs I1: $res);
-
-   let assemblyFormat = [{ $input custom<WithSSANames>(attr-dict) `:` type($res)}];
-}
-
-def GetResetOp: HIR_Op<"get_reset",[NoSideEffect]>{
-   let summary = "Get the reset signal corresponding to a time variable.";
-   let description = [{
-Example:
-      ```mlir %rst = hir.get_reset %t : i1```
-   }];
-
-   let arguments = (ins HIR_TimeType: $input);
-   let results = (outs I1: $res);
-
-   let assemblyFormat = [{ $input custom<WithSSANames>(attr-dict) `:` type($res)}];
-}
-
 def ProbeOp: HIR_Op<"probe",[]>{
    let summary = "Preserve name of an SSA var.";
    let description = [{
