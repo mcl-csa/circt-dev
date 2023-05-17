@@ -11,19 +11,24 @@ private:
 
 public:
   T dut;
+  Testbench();
   Testbench(const char *waveformFile);
   void registerModule(Module *mod);
   void run(vluint64_t numCycles);
   ~Testbench();
+  bool traceOn;
 };
-template <typename T> Testbench<T>::Testbench(const char *waveformFile) {
+template <typename T> Testbench<T>::Testbench():traceOn(false) {
+}
+
+template <typename T> Testbench<T>::Testbench(const char *waveformFile):traceOn(true) {
   Verilated::traceEverOn(true);
   // Trace 5 levels of hierarchy.
   dut.trace(&m_trace, 5);
   m_trace.open(waveformFile);
 }
 
-template <typename T> Testbench<T>::~Testbench() { m_trace.close(); }
+template <typename T> Testbench<T>::~Testbench() { if(traceOn)m_trace.close(); }
 
 template <typename T> void Testbench<T>::registerModule(Module *mod) {
   modules.push_back(mod);
@@ -51,6 +56,7 @@ template <typename T> void Testbench<T>::run(vluint64_t numCycles) {
 
     // Evaluate the dut with old inputs.
     dut.eval();
+    if(traceOn);
     m_trace.dump(t);
 
     // If current clk value is 1 then this is posedge.

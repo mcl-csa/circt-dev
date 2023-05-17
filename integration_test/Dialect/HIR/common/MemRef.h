@@ -7,48 +7,50 @@
 
 using namespace std;
 
-template <typename AddrT, typename DataT>
+template <typename  VAddrT, typename VDataT>
 struct RdPort {
   unsigned char *addrEn;
-  AddrT *addr;
+   VAddrT *addr;
   unsigned char *rdEn;
-  DataT *rdData;
-  DataT value;
+  VDataT *rdData;
+  VDataT value;
   bool hasValue;
 };
 
-template <typename AddrT, typename DataT>
+template <typename  VAddrT, typename VDataT>
 struct WrPort {
   unsigned char *addrEn;
-  AddrT *addr;
+   VAddrT *addr;
   unsigned char *wrEn;
-  DataT *wrData;
+  VDataT *wrData;
 };
 
-template <typename AddrT, typename DataT>
+template <typename  VAddrT, typename VDataT>
 class MemRef : public Module {
 private:
-  vector<DataT> data;
-  vector<RdPort<AddrT, DataT>> rdPorts;
-  vector<WrPort<AddrT, DataT>> wrPorts;
+  vector<VDataT> storage;
+  vector<RdPort< VAddrT, VDataT>> rdPorts;
+  vector<WrPort< VAddrT, VDataT>> wrPorts;
 
 public:
   MemRef(const char *fileName);
   MemRef(int size);
-  void registerRdPort(unsigned char *addrEn, AddrT *addr, unsigned char *rdEn,
-                      DataT *rdData);
-  void registerWrPort(unsigned char *addrEn, AddrT *addr, unsigned char *wrEn,
-                      DataT *wrData);
-  void registerRdWrPort(unsigned char *addrEn, AddrT *addr, unsigned char *rdEn,
-                        DataT *rdData, unsigned char *wrEn, DataT *wrData);
-  // void tick();
+  void registerRdPort(unsigned char *addrEn,  VAddrT *addr, unsigned char *rdEn,
+                      VDataT *rdData);
+  void registerWrPort(unsigned char *addrEn,  VAddrT *addr, unsigned char *wrEn,
+                      VDataT *wrData);
+  void registerRdWrPort(unsigned char *addrEn,  VAddrT *addr, unsigned char *rdEn,
+                        VDataT *rdData, unsigned char *wrEn, VDataT *wrData);
   void before_posedge() override;
   void after_posedge() override;
-  void *getRawDataPtr();
+  template<typename TPTR>
+  TPTR getDataPtr();
+template < typename DataT>
+void assertEq(const char* name,  DataT rhs[]);
 };
 
-template <typename AddrT, typename DataT>
-MemRef<AddrT, DataT>::MemRef(const char *fileName) {
+template <typename  VAddrT, typename VDataT>
+MemRef< VAddrT, VDataT>::MemRef(const char *fileName) {
   ifstream myfile(fileName);
   if (!myfile.is_open()) {
     cout << "Could not open file \"" << fileName << "\" in directory "
@@ -59,41 +61,41 @@ MemRef<AddrT, DataT>::MemRef(const char *fileName) {
   string line;
   while (getline(myfile, line)) {
     // TODO: assert(sizeof(DataT)<=sizeof(long));
-    data.push_back((DataT)stol(line));
+    storage.push_back((VDataT)stol(line));
   }
 }
-template <typename AddrT, typename DataT>
-MemRef<AddrT, DataT>::MemRef(int size) {
-  data = vector<DataT>(size, 0);
+template <typename  VAddrT, typename VDataT>
+MemRef< VAddrT, VDataT>::MemRef(int size) {
+  storage = vector<VDataT>(size, 0);
 }
 
-template <typename AddrT, typename DataT>
-void MemRef<AddrT, DataT>::registerRdPort(unsigned char *addrEn, AddrT *addr,
-                                          unsigned char *rdEn, DataT *rdData) {
+template <typename  VAddrT, typename VDataT>
+void MemRef< VAddrT, VDataT>::registerRdPort(unsigned char *addrEn,  VAddrT *addr,
+                                          unsigned char *rdEn, VDataT *rdData) {
 
   rdPorts.push_back({addrEn, addr, rdEn, rdData});
 }
 
-template <typename AddrT, typename DataT>
-void MemRef<AddrT, DataT>::registerWrPort(unsigned char *addrEn, AddrT *addr,
-                                          unsigned char *wrEn, DataT *wrData) {
+template <typename  VAddrT, typename VDataT>
+void MemRef< VAddrT, VDataT>::registerWrPort(unsigned char *addrEn,  VAddrT *addr,
+                                          unsigned char *wrEn, VDataT *wrData) {
   wrPorts.push_back({addrEn, addr, wrEn, wrData});
 }
 
-template <typename AddrT, typename DataT>
-void MemRef<AddrT, DataT>::registerRdWrPort(unsigned char *addrEn, AddrT *addr,
-                                            unsigned char *rdEn, DataT *rdData,
+template <typename  VAddrT, typename VDataT>
+void MemRef< VAddrT, VDataT>::registerRdWrPort(unsigned char *addrEn,  VAddrT *addr,
+                                            unsigned char *rdEn, VDataT *rdData,
                                             unsigned char *wrEn,
-                                            DataT *wrData) {
+                                            VDataT *wrData) {
   rdPorts.push_back({addrEn, addr, rdEn, rdData});
   wrPorts.push_back({addrEn, addr, wrEn, wrData});
 }
 
-template <typename AddrT, typename DataT>
-void MemRef<AddrT, DataT>::before_posedge() {
+template <typename  VAddrT, typename VDataT>
+void MemRef< VAddrT, VDataT>::before_posedge() {
   for (auto &rdPort : rdPorts) {
     if (*rdPort.rdEn == 1) {
-      auto value = this->data[*rdPort.addr];
+      auto value = this->storage[*rdPort.addr];
       rdPort.value = value;
       rdPort.hasValue = true;
     } else
@@ -101,13 +103,13 @@ void MemRef<AddrT, DataT>::before_posedge() {
   }
   for (auto &wrPort : wrPorts) {
     if (*wrPort.wrEn == 1) {
-      this->data[*wrPort.addr] = *wrPort.wrData;
+      this->storage[*wrPort.addr] = *wrPort.wrData;
     }
   }
 }
 
-template <typename AddrT, typename DataT>
-void MemRef<AddrT, DataT>::after_posedge() {
+template <typename  VAddrT, typename VDataT>
+void MemRef< VAddrT, VDataT>::after_posedge() {
   for (auto rdPort : rdPorts) {
     if (rdPort.hasValue) {
       *rdPort.rdData = rdPort.value;
@@ -115,27 +117,22 @@ void MemRef<AddrT, DataT>::after_posedge() {
   }
 }
 
-/*
-template <typename AddrT, typename DataT>
-void MemRef<AddrT,DataT>::tick()
-{
-    //read before write
-    for(auto rdPort: rdPorts)
-    {
-        if(*rdPort.rdEn!=1) continue;
-        auto value= this->data[*rdPort.addr];
-        *rdPort.rdData=value;
-    }
-    for(auto wrPort: wrPorts)
-    {
-        if(*wrPort.wrEn!=1) continue;
-        this->data[*wrPort.addr] = *wrPort.wrData;
-    }
-
+template <typename  VAddrT, typename VDataT>
+template<typename TPTR>
+TPTR MemRef< VAddrT, VDataT>::getDataPtr() {
+  return (TPTR)storage.data();
 }
-*/
 
-template <typename AddrT, typename DataT>
-void *MemRef<AddrT, DataT>::getRawDataPtr() {
-  return (void *)data.data();
+template <typename  VAddrT, typename VDataT>
+template <typename DataT>
+void MemRef< VAddrT, VDataT>::assertEq(const char* name, DataT rhs[])
+{         
+  // TODO: assert(sizeof(VDataT)<=sizeof(DataT));
+  for (int i = 0; i < this->storage.size(); i++) {
+    if (this->storage[i] != (VDataT)rhs[i]) {
+      printf("ERROR: wrong value. %s[%d] = %d (expected: %d).\n",name, i,
+             this->storage[i], rhs[i]);
+      exit(1);
+    }
+  }
 }
