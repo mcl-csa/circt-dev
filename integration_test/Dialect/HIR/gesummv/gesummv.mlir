@@ -1,6 +1,6 @@
 // REQUIRES: verilator
 // RUN: circt-opt --affine-to-hir --hir-opt --hir-simplify  --hir-to-hw --canonicalize --sccp --cse --export-split-verilog='dir-name=build_verilog' %s
-// RUN: verilator --cc build_verilog/*.sv %S/helper.sv --top gesummv_hir --Mdir build_verilator %S/main.cpp %S/gesummv.c --trace --exe  --build
+// RUN: verilator --cc build_verilog/*.sv %S/../common/helper.sv --top gesummv_hir --Mdir build_verilator %S/main.cpp %S/gesummv.c %S/../common/helper.c --trace --exe  --build
 // RUN: build_verilator/Vgesummv_hir %S
 
 #bram_r = {"rd_latency"=1}

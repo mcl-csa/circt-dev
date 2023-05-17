@@ -1,8 +1,8 @@
 #include <iostream>
 #include <stdlib.h>
 
-#include "MemRef.h"
-#include "Testbench.h"
+#include "../common/MemRef.h"
+#include "../common/Testbench.h"
 #include "Vgesummv_hir.h"
 
 void gesummv_hir(int alpha, int beta, int tmp[8], int A[8][8], int B[8][8],
@@ -40,9 +40,9 @@ public:
 };
 
 int main(int argc, char **argv, char **env) {
-  gesummv_tb tb(std::string(argv[1]) + std::string("/A.txt"),
-                std::string(argv[1]) + std::string("/B.txt"),
-                std::string(argv[1]) + std::string("/X.txt"));
+  gesummv_tb tb(std::string(argv[1]) + std::string("/data/A.txt"),
+                std::string(argv[1]) + std::string("/data/B.txt"),
+                std::string(argv[1]) + std::string("/data/X.txt"));
   tb.run(1000);
   int tmp[8];
   int Y[8];
