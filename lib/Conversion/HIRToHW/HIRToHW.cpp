@@ -12,6 +12,7 @@
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/SV/SVDialect.h"
+#include "circt/Dialect/SV/SVOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include <iostream>
@@ -57,6 +58,8 @@ private:
   LogicalResult visitOp(hir::ReturnOp);
   LogicalResult visitOp(hir::TimeOp);
   LogicalResult visitOp(hir::WhileOp);
+  LogicalResult visitOp(hir::WireOp);
+  LogicalResult visitOp(hir::DriveOp);
   LogicalResult visitRegion(mlir::Region &);
 
 private:
@@ -714,6 +717,21 @@ LogicalResult HIRToHWPass::visitRegion(mlir::Region &region) {
   return success();
 }
 
+LogicalResult HIRToHWPass::visitOp(hir::WireOp op) {
+  auto z = builder->create<sv::ConstantZOp>(
+      builder->getUnknownLoc(),
+      op.getResult().getType().dyn_cast<hir::WireType>().getElementType());
+  mapHIRToHWValue.map(op.res(), z);
+  return success();
+}
+
+LogicalResult HIRToHWPass::visitOp(hir::DriveOp op) {
+  auto wire = mapHIRToHWValue.lookup(op.wire());
+  auto value = mapHIRToHWValue.lookup(op.value());
+  mapHIRToHWValue.replaceAllHWUses(wire, value);
+  return success();
+}
+
 LogicalResult HIRToHWPass::visitOperation(Operation *operation) {
   if (auto op = dyn_cast<hir::BusMapOp>(operation))
     return visitOp(op);
@@ -764,6 +782,10 @@ LogicalResult HIRToHWPass::visitOperation(Operation *operation) {
   if (auto op = dyn_cast<hir::CastOp>(operation))
     return visitOp(op);
   if (auto op = dyn_cast<hir::ProbeOp>(operation))
+    return visitOp(op);
+  if (auto op = dyn_cast<hir::WireOp>(operation))
+    return visitOp(op);
+  if (auto op = dyn_cast<hir::DriveOp>(operation))
     return visitOp(op);
   if (auto *dialect = operation->getDialect();
       isa<comb::CombDialect, hw::HWDialect, sv::SVDialect>(dialect))

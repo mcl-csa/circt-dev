@@ -91,6 +91,7 @@ public:
   void replaceAllHWUses(Value from, Value to) {
     assert(from.getParentRegion()->getParentOfType<hw::HWModuleOp>());
     assert(to.getParentRegion()->getParentOfType<hw::HWModuleOp>());
+    assert(from.getType() == to.getType());
     from.replaceAllUsesWith(to);
     for (auto keyValue : mapHIRToHWValue) {
       if (keyValue.getSecond() == from)
