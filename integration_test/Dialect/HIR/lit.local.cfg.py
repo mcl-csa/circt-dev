@@ -1,0 +1,7 @@
+config.excludes.add('main.cpp')
+config.excludes.add('helper.c')
+config.excludes.add('gesummv.c')
+config.excludes.add('helper.sv')
+config.excludes.add('A.txt')
+config.excludes.add('B.txt')
+config.excludes.add('X.txt')
