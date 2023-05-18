@@ -231,6 +231,11 @@ Optional<int64_t> ForOp::getTripCount() {
   auto ub = helper::getConstantIntValue(this->ub());
   if (!ub.hasValue())
     return llvm::None;
+  if (*ub <= *lb) {
+    this->emitError("Upper bound should be greater than lower bound.")
+        << "ub=" << *ub << "lb=" << *lb;
+    assert(false && "ub>lb");
+  }
   auto step = helper::getConstantIntValue(this->step());
   if (!step.hasValue())
     return llvm::None;
@@ -238,13 +243,9 @@ Optional<int64_t> ForOp::getTripCount() {
 }
 
 Optional<int64_t> ForOp::getInitiationInterval() {
-  auto nextIterOp = dyn_cast<hir::NextIterOp>(
-      this->getLoopBody().getBlocks().front().getTerminator());
-  auto time = nextIterOp.getStartTime();
-  if (time.getTimeVar() != this->getIterTimeVar()) {
+  if (!this->initiation_interval())
     return llvm::None;
-  }
-  return time.getOffset();
+  return this->initiation_interval().getValue();
 }
 
 // ScheduledOp interface.

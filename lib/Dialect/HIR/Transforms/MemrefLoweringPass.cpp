@@ -42,6 +42,7 @@ private:
   MemrefInfo memrefInfo;
   SmallVector<Operation *, 10> opsToErase;
   Optional<OpBuilder> topLevelBuilder;
+  int instNum = 0;
 };
 } // end anonymous namespace
 
@@ -350,6 +351,8 @@ LogicalResult MemrefLoweringPass::visitOp(hir::LoadOp op) {
                   .getValue();
   auto *memoryInterface =
       memrefInfo.getInterface(op.mem(), op.port().getValue(), bank);
+  if (!memoryInterface)
+    return op.emitError("Could not find memory info!");
 
   mlir::OpBuilder builder(op.getContext());
   builder.setInsertionPoint(op);
@@ -380,6 +383,9 @@ LogicalResult MemrefLoweringPass::visitOp(hir::StoreOp op) {
                   .getValue();
   auto *memoryInterface =
       memrefInfo.getInterface(op.mem(), op.port().getValue(), bank);
+  if (!memoryInterface)
+    return op.emitError("Could not find memory info! ")
+           << "{port:" << op.port().getValue() << ", bank:" << bank << "}.";
 
   mlir::OpBuilder builder(op.getContext());
   builder.setInsertionPoint(op);
@@ -494,17 +500,20 @@ LogicalResult MemrefLoweringPass::visitOp(hir::AllocaOp op) {
   for (auto bank = 0; bank < memrefTy.getNumBanks(); bank++) {
     auto memName = createHWMemoryName(op.mem_kind(), memrefTy, op.ports());
     auto memVerilogName = createVerilogMemoryName(op.mem_kind(), op.ports());
-    Optional<std::string> instanceName;
+    std::string instanceName;
     auto resultName = helper::getOptionalName(op);
     if (resultName) {
       instanceName =
           resultName.getValue().str() + "_bank" + std::to_string(bank);
+    } else {
+      instanceName = memName;
     }
+    instanceName = instanceName + "_inst" + std::to_string(instNum++);
     if (failed(emitMemoryInstance(builder, memrefTy,
                                   memoryInterfacesPerBankPerPort[bank],
                                   op.mem_kind(), memVerilogName, memName,
                                   instanceName, getRegionTimeVar(op))))
-      return failure();
+      return op.emitError("Failed to emit memory instance.");
   }
 
   // Associate the memory interfaces with the memref in memInfo.

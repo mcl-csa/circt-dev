@@ -139,13 +139,13 @@ getConstantXArray(OpBuilder &builder, Type hirTy,
   auto hwArrayTy = hwTy.dyn_cast<hw::ArrayType>();
   // If its a bus_tensor of size 1 then do not update mapArrayToElements;
   if (!hwArrayTy) {
-    return getConstantX(builder, hwTy);
+    return constantX(builder, hwTy);
   }
   SmallVector<Value> constXCopies;
   for (uint64_t i = 0; i < hwArrayTy.getSize(); i++) {
     Value const constXValue =
-        getConstantX(builder, hir::BusType::get(builder.getContext(),
-                                                hwArrayTy.getElementType()))
+        constantX(builder, hir::BusType::get(builder.getContext(),
+                                             hwArrayTy.getElementType()))
             ->getResult(0);
     constXCopies.push_back(constXValue);
   }
@@ -155,7 +155,7 @@ getConstantXArray(OpBuilder &builder, Type hirTy,
   return arrOp;
 }
 
-Operation *getConstantX(OpBuilder &builder, Type hirTy) {
+Operation *constantX(OpBuilder &builder, Type hirTy) {
   auto hwTy = *helper::convertToHWType(hirTy);
   assert(hwTy.isa<IntegerType>());
   return builder.create<sv::ConstantXOp>(builder.getUnknownLoc(), hwTy);
