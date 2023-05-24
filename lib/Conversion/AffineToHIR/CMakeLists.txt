@@ -3,7 +3,7 @@ add_circt_library(CIRCTAffineToHIR
   AffineToHIRUtils.cpp
   AutoAffineToHIRPass.cpp
   HIRPragma.cpp
-  #OpFusionAnalysis.cpp
+  PragmaHandler.cpp
   SchedulingAnalysis.cpp 
   SchedulingUtils.cpp
 

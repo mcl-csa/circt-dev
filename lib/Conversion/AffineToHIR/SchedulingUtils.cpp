@@ -1,132 +1,39 @@
 #include "circt/Conversion/SchedulingUtils.h"
+#include "PragmaHandler.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Support/LLVM.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cstdint>
+#include <iomanip>
 #include <ortools/linear_solver/linear_solver.h>
+#include <ostream>
+#include <sstream>
 #include <string>
 #include <tuple>
 using namespace mlir;
 using namespace circt;
 using namespace operations_research;
 using std::to_string;
-// Local functions.
-llvm::Optional<int>
-getMemrefPortFromAffineLoadOrStoreOpAttr(mlir::Operation *operation) {
-  assert(isa<mlir::AffineLoadOp>(operation) ||
-         isa<mlir::AffineStoreOp>(operation));
-  auto portNumAttr = operation->getAttrOfType<IntegerAttr>("hir.memref_port");
-  if (!portNumAttr)
-    return llvm::None;
-  return portNumAttr.getInt();
-}
-
-static AffineMap getAffineMapForMemoryAccess(Operation *operation) {
-
-  if (auto affineLoadOp = dyn_cast<AffineLoadOp>(operation)) {
-    return affineLoadOp.getAffineMap();
-  }
-  auto affineStoreOp = dyn_cast<AffineStoreOp>(operation);
-
-  assert(affineStoreOp);
-  return affineStoreOp.getAffineMap();
-}
 
 //-----------------------------------------------------------------------------
 // Helper functions.
 //-----------------------------------------------------------------------------
-
-static int getLoopII(AffineForOp affineForOp) {
-  assert(affineForOp->hasAttrOfType<mlir::IntegerAttr>("II"));
-  return affineForOp->getAttrOfType<mlir::IntegerAttr>("II").getInt();
+void addCoeff(MPConstraint *constr, MPVariable *var, int64_t coeff) {
+  auto prevCoeff = constr->GetCoefficient(var);
+  constr->SetCoefficient(var, prevCoeff + coeff);
 }
-
-Value getMemrefFromAffineLoadOrStoreOp(Operation *operation) {
-  assert(isa<AffineLoadOp>(operation) || isa<AffineStoreOp>(operation));
-  if (auto storeOp = dyn_cast<AffineStoreOp>(operation))
-    return storeOp.getMemRef();
-  auto loadOp = dyn_cast<AffineLoadOp>(operation);
-  return loadOp.getMemRef();
-}
-
-int64_t getMemOpSafeDelay(Operation *operation,
-                          DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr) {
-  if (auto affineStoreOp = dyn_cast<mlir::AffineStoreOp>(operation)) {
-    auto ports = mapMemrefToPortsAttr[affineStoreOp.getMemRef()];
-    for (auto port : ports) {
-      if (helper::isMemrefWrPort(port)) {
-        return helper::getMemrefPortWrLatency(port).getValue();
-      }
-    }
-    operation->emitError("Could not find memref wr port");
-    llvm_unreachable("Expected a write port.");
-  }
-  assert(isa<mlir::AffineLoadOp>(operation));
-  // If the source op is a load then a store op can be scheduled in the same
-  // cycle.
-  return 0;
-}
-
-llvm::Optional<int64_t> getResultDelay(OpResult v) {
-  auto *operation = v.getOwner();
-  auto resultDelays = operation->getAttrOfType<ArrayAttr>("result_delays");
-  if (!resultDelays) {
-    return llvm::None;
-  }
-  if (resultDelays.size() != operation->getNumResults()) {
-    return llvm::None;
-  }
-  auto delayAttr = resultDelays[v.getResultNumber()];
-  if (!delayAttr.isa<IntegerAttr>()) {
-    return llvm::None;
-  }
-  return delayAttr.dyn_cast<IntegerAttr>().getInt();
-}
-
-void populateMemrefToPortsAttrMapping(
-    mlir::func::FuncOp funcOp,
-    llvm::DenseMap<Value, ArrayAttr> &mapMemrefToPortsAttr) {
-  funcOp.walk([&mapMemrefToPortsAttr](Operation *operation) {
-    if (auto funcOp = dyn_cast<mlir::func::FuncOp>(operation)) {
-      auto argAttrs = funcOp.getAllArgAttrs();
-      auto args = funcOp.getBody().front().getArguments();
-      assert(args.size() == argAttrs.size());
-      if (argAttrs) {
-        for (size_t i = 0; i < args.size(); i++) {
-          if (args[i].getType().isa<mlir::MemRefType>()) {
-            mapMemrefToPortsAttr[args[i]] =
-                helper::extractMemrefPortsFromDict(
-                    argAttrs[i].dyn_cast<DictionaryAttr>())
-                    .getValue();
-          }
-        }
-      }
-    } else if (auto allocaOp = dyn_cast<mlir::memref::AllocaOp>(operation)) {
-      auto ports =
-          helper::extractMemrefPortsFromDict(allocaOp->getAttrDictionary())
-              .getValue();
-      mapMemrefToPortsAttr[allocaOp.getResult()] = ports;
-    }
-  });
-}
-
-// We need this because if the use is inside a nested region-op then the ssa var
-// will be captured by this op (Ex: user inside forOp) using iter_args in hir
-// dialect. Thus, we consider the enclosing parentOp (Ex: forOp) as the
-// dependent op instead of the original user.
-static Operation *getTopLevelDependentOp(Operation *commonParentOp,
-                                         Operation *user) {
-  Operation *actualDependentOp = user;
-  while (actualDependentOp->getParentOp() != commonParentOp) {
-    actualDependentOp = actualDependentOp->getParentOp();
-  }
-  return actualDependentOp;
+void addCoeff(MPObjective *constr, MPVariable *var, int64_t coeff) {
+  auto prevCoeff = constr->GetCoefficient(var);
+  constr->SetCoefficient(var, prevCoeff + coeff);
 }
 
 static Optional<std::tuple<int, int, int>> getConstantBounds(AffineForOp op) {
@@ -141,64 +48,248 @@ static Optional<std::tuple<int, int, int>> getConstantBounds(Value iv) {
   return getConstantBounds(op);
 }
 
+static SmallVector<Operation *, 4> getOpAndParents(Operation *operation) {
+  SmallVector<Operation *, 4> opAndParents;
+  while (!isa<mlir::func::FuncOp>(operation)) {
+    opAndParents.push_back(operation);
+    operation = operation->getParentOp();
+  }
+  return opAndParents;
+}
+
+//-----------------------------------------------------------------------------
+// class OpInfo methods.
+//-----------------------------------------------------------------------------
+using namespace mlir;
+OpInfo::OpInfo(Operation *operation, int staticPos)
+    : operation(operation), staticPos(staticPos) {
+  auto *currentOperation = operation;
+  while (auto affineForOp = currentOperation->getParentOfType<AffineForOp>()) {
+    parentLoops.push_back(affineForOp);
+    parentLoopIVs.push_back(affineForOp.getInductionVar());
+    currentOperation = affineForOp;
+  }
+}
+
+Operation *OpInfo::getOperation() { return operation; }
+int OpInfo::getStaticPosition() { return staticPos; }
+size_t OpInfo::getNumParentLoops() { return parentLoops.size(); }
+AffineForOp OpInfo::getParentLoop(int i) { return parentLoops[i]; }
+Value OpInfo::getParentLoopIV(int i) { return parentLoopIVs[i]; }
+
+//-----------------------------------------------------------------------------
+// class MemOpInfo methods.
+//-----------------------------------------------------------------------------
+MemOpInfo::MemOpInfo(Operation *operation, int staticPos)
+    : OpInfo(operation, staticPos) {
+  assert(isa<AffineLoadOp>(operation) || isa<AffineStoreOp>(operation));
+}
+
+Value MemOpInfo::getMemRef() {
+  if (auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation()))
+    return storeOp.getMemRef();
+  auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation());
+  assert(loadOp);
+  return loadOp.getMemRef();
+}
+
+int64_t MemOpInfo::getDelay() {
+  auto pragmaHandler = MemrefPragmaHandler(this->getMemRef());
+  if (isa<AffineLoadOp>(this->getOperation()))
+    return pragmaHandler.getRdLatency();
+  return pragmaHandler.getWrLatency();
+}
+
+bool MemOpInfo::isConstant() { return false; }
+
+size_t MemOpInfo::getNumMemDims() {
+  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation()))
+    return loadOp.getAffineMap().getNumDims();
+
+  auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation());
+  assert(storeOp);
+  return storeOp.getAffineMap().getNumDims();
+}
+
+int64_t MemOpInfo::getConstCoeff(int64_t dim) {
+  SmallVector<int64_t> coeffs;
+  AffineExpr expr;
+  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation())) {
+    expr = loadOp.getAffineMap().getResult(dim);
+  } else {
+    auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation());
+    expr = storeOp.getAffineMap().getResult(dim);
+  }
+
+  // If the expression could not be flattened then treat the whole dim as zero
+  // (i.e. all accesses alias on this dim).
+  if (failed(getFlattenedAffineExpr(expr, getNumMemDims(), 0, &coeffs)))
+    return 0;
+
+  return coeffs.back();
+}
+
+int64_t MemOpInfo::getIdxCoeff(mlir::Value var, int64_t dim) {
+  auto indices = getIndices();
+  Optional<size_t> varLoc = llvm::None;
+  AffineExpr expr;
+
+  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation())) {
+    expr = loadOp.getAffineMap().getResult(dim);
+  } else if (auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation())) {
+    expr = storeOp.getAffineMap().getResult(dim);
+  } else {
+    llvm_unreachable("Must be a affine load or store op.");
+  }
+
+  for (size_t i = 0; i < indices.size(); i++) {
+    if (indices[i] == var) {
+      varLoc = i;
+      break;
+    }
+  }
+  // var not in index is equivalent to saying coeff is zero.
+  if (!varLoc)
+    return 0;
+
+  SmallVector<int64_t> coeffs;
+  if (failed(getFlattenedAffineExpr(expr, getNumMemDims(), 0, &coeffs)))
+    return 0;
+
+  return coeffs[*varLoc];
+}
+
+SmallVector<int64_t, 4>
+MemOpInfo::getIdxCoeffs(mlir::ArrayRef<mlir::Value> indices, int64_t dim) {
+
+  SmallVector<int64_t, 4> coeffs;
+  for (auto idx : indices)
+    coeffs.push_back(this->getIdxCoeff(idx, dim));
+
+  return coeffs;
+}
+
+llvm::SmallVector<mlir::Value> MemOpInfo::getIndices() {
+  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation()))
+    return loadOp.getIndices();
+
+  auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation());
+  assert(storeOp);
+  return storeOp.getIndices();
+}
+//-----------------------------------------------------------------------------
+// ArithOpInfo.
+//-----------------------------------------------------------------------------
+ArithOpInfo::ArithOpInfo(mlir::Operation *operation) {
+  assert(isa<arith::ArithmeticDialect>(operation->getDialect()));
+  assert(!isa<arith::ConstantOp>(operation) && "arith.constant ");
+  if (isa<arith::AddIOp>(operation)) {
+    this->delay = 0;
+  } else if (isa<arith::MulIOp>(operation)) {
+    this->delay = 0;
+  } else {
+    operation->emitError();
+    assert(false && "unsupported Arith operation");
+  }
+}
+
+int64_t ArithOpInfo::getDelay() { return delay; }
+
+bool ArithOpInfo::isConstant() {
+  return isa<arith::ConstantOp>(getOperation());
+}
+
 //-----------------------------------------------------------------------------
 // ILPSolver.
 //-----------------------------------------------------------------------------
 
-ILPSolver::ILPSolver(const char *name)
+ILPSolver::ILPSolver(const char *name, llvm::raw_ostream &logger)
     : MPSolver(
           name,
-          MPSolver::OptimizationProblemType::SCIP_MIXED_INTEGER_PROGRAMMING) {}
+          MPSolver::OptimizationProblemType::SCIP_MIXED_INTEGER_PROGRAMMING),
+      logger(logger), solved(false) {}
 
-std::string ILPSolver::dump() {
-  this->Name();
-  std::string debugStr;
-  assert(!this->Objective().terms().empty());
-  assert(this->variables().size() > 0);
+void ILPSolver::dump() {
 
-  debugStr = "\nObjective:\n\t\t";
+  if (this->Objective().minimization())
+    logger << "Minimize: ";
+  else if (this->Objective().maximization())
+    logger << "Maximize: ";
+  else
+    llvm_unreachable("Objective not set.");
   for (auto *v : this->variables()) {
-    auto coeff = this->Objective().GetCoefficient(v);
-    if (coeff != 0)
-      debugStr +=
-          (coeff > 0 ? " +" : " -") + to_string(coeff) + v->name() + "\n";
+    int coeff = (long)this->Objective().GetCoefficient(v);
+    if (coeff == 0)
+      continue;
+    if (coeff == 1)
+      logger << " + " << v->name();
+    else if (coeff == -1)
+      logger << " - " << v->name();
+    else if (coeff > 0)
+      logger << " + " << coeff << v->name();
+    else
+      logger << " - " << -coeff << v->name();
   }
 
-  debugStr += "\nBounds:\n\t\t";
+  logger << "\nBounds:\n";
   for (auto *v : this->variables()) {
-    debugStr += to_string(v->lb()) + "\t\t≤\t\t" + v->name() + "\t\t≤\t\t" +
-                to_string(v->ub()) + "\n";
+    if (v->lb() > -infinity())
+      logger << (long)v->lb() << "\t≤\t";
+    logger << v->name();
+    if (this->isSolved())
+      logger << "(" << (long)v->solution_value() << ")";
+    if (v->ub() < infinity())
+      logger << "\t≤\t" << (long)v->ub();
+    logger << "\n";
   }
 
-  debugStr += "\nConstraints:\n\t\t";
+  logger << "\nConstraints:\n";
   for (auto *constr : this->constraints()) {
+    if (!constr->name().empty())
+      logger << constr->name() << ": ";
+    if (constr->lb() > -infinity())
+      logger << (long)constr->lb() << "\t≤\t";
+    bool constrAsAtleastOneVar = false;
     for (auto *v : this->variables()) {
-      auto coeff = constr->GetCoefficient(v);
-      if (coeff != 0)
-        debugStr +=
-            (coeff > 0 ? " +" : " -") + to_string(coeff) + v->name() + "\n";
+      auto coeff = (long)constr->GetCoefficient(v);
+      if (coeff == 0)
+        continue;
+      constrAsAtleastOneVar = true;
+      if (coeff == 1)
+        logger << " + " << v->name();
+      else if (coeff == -1)
+        logger << " - " << v->name();
+      else if (coeff > 0)
+        logger << " + " << coeff << v->name();
+      else
+        logger << " - " << -coeff << v->name();
     }
+    if (!constrAsAtleastOneVar)
+      logger << 0;
+    if (constr->ub() < infinity())
+      logger << "\t≤\t" << (long)constr->ub();
+    logger << "\n";
   }
-
-  return debugStr;
 }
 
 std::pair<MPVariable *, MPVariable *>
-ILPSolver::addBoundedILPVar(int64_t lb, int64_t ub, int64_t step,
+ILPSolver::addBoundedILPVar(double lb, double ub, int64_t step,
                             std::string &name) {
+  assert(-infinity() < lb < infinity());
+  assert(-infinity() < ub < infinity());
   assert(step != 0);
-  auto ilpVar = this->MakeIntVar(lb, ub, name);
+  auto *ilpVar = this->MakeIntVar(lb, ub, name);
   MPVariable *canonicalVar = ilpVar;
   if (step != 1) {
     canonicalVar = this->MakeIntVar(0, (ub - lb) / step, "cc_" + name);
-    auto constr = this->MakeRowConstraint(0, 0);
-    constr->SetCoefficient(canonicalVar, step);
-    constr->SetCoefficient(ilpVar, -1);
+    auto *constr = this->MakeRowConstraint(0, 0);
+    addCoeff(constr, canonicalVar, step);
+    addCoeff(constr, ilpVar, -1);
   }
   return std::make_pair(ilpVar, canonicalVar);
 }
 
-operations_research::MPVariable *ILPSolver::addIntVar(int64_t lb, int64_t ub,
+operations_research::MPVariable *ILPSolver::addIntVar(double lb, double ub,
                                                       std::string name) {
   if (name == "")
     name = "c" + std::to_string(varID++);
@@ -208,45 +299,66 @@ operations_research::MPVariable *ILPSolver::addIntVar(int64_t lb, int64_t ub,
 //-----------------------------------------------------------------------------
 // MemoryDependenceILPHandler.
 //-----------------------------------------------------------------------------
-MemoryDependenceILPHandler::MemoryDependenceILPHandler(MemOpInfo &src,
-                                                       MemOpInfo &dest)
-    : ILPSolver("MemoryDependenceILP"), src(src), dest(dest) {
+MemoryDependenceILPHandler::MemoryDependenceILPHandler(
+    MemOpInfo &src, MemOpInfo &dest, llvm::raw_ostream &logger)
+    : ILPSolver("MemoryDependenceILP", logger), src(src), dest(dest) {
 
   assert(this->src.getNumMemDims() == this->dest.getNumMemDims());
+  // Add names of the ILP vars for the loop IVs.
+  for (size_t i = 0; i < src.getNumParentLoops(); i++) {
+    getOrAddBoundedILPSrcVar("s" + to_string(i),
+                             src.getParentLoop(i).getInductionVar());
+  }
+  for (size_t i = 0; i < dest.getNumParentLoops(); i++) {
+    getOrAddBoundedILPDestVar("d" + to_string(i),
+                              dest.getParentLoop(i).getInductionVar());
+  }
   addHappensBeforeConstraintRow();
   addMemoryConstraints();
+  addObjective();
+  this->MutableObjective()->SetMinimization();
 }
 
 operations_research::MPVariable *
-MemoryDependenceILPHandler::getOrAddBoundedILPSrcVar(int64_t lb, int64_t ub,
-                                                     int64_t step,
-                                                     std::string &&name,
+MemoryDependenceILPHandler::getOrAddBoundedILPSrcVar(std::string &&name,
                                                      mlir::Value ssaVar) {
 
   assert(ssaVar);
+  auto forOp = dyn_cast<AffineForOp>(ssaVar.getParentRegion()->getParentOp());
+  assert(forOp);
+  auto bounds = getConstantBounds(forOp);
+  auto lb = std::get<0>(*bounds);
+  auto ub = std::get<1>(*bounds);
+  auto step = std::get<2>(*bounds);
   if (std::get<3>(mapValue2BoundedILPSrcVar[ssaVar]))
     return std::get<3>(mapValue2BoundedILPSrcVar[ssaVar]);
 
   assert(step != 0);
-  auto vars = this->addBoundedILPVar(lb, ub, step, name);
+  // ILP expects inclusive ub. But ForOp ub is non-inclusive.
+  auto vars = this->addBoundedILPVar(lb, ub - 1, step, name);
   auto *ilpVar = vars.first;
   mapValue2BoundedILPSrcVar[ssaVar] = std::make_tuple(lb, ub, step, ilpVar);
   return ilpVar;
 }
 
 operations_research::MPVariable *
-MemoryDependenceILPHandler::getOrAddBoundedILPDestVar(int64_t lb, int64_t ub,
-                                                      int64_t step,
-                                                      std::string &&name,
+MemoryDependenceILPHandler::getOrAddBoundedILPDestVar(std::string &&name,
                                                       mlir::Value ssaVar) {
 
   assert(ssaVar);
+  auto forOp = dyn_cast<AffineForOp>(ssaVar.getParentRegion()->getParentOp());
+  assert(forOp);
+  auto bounds = getConstantBounds(forOp);
+  auto lb = std::get<0>(*bounds);
+  auto ub = std::get<1>(*bounds);
+  auto step = std::get<2>(*bounds);
   if (std::get<3>(mapValue2BoundedILPDestVar[ssaVar]))
     return std::get<3>(mapValue2BoundedILPDestVar[ssaVar]);
 
   assert(step != 0);
-  auto vars = this->addBoundedILPVar(lb, ub, step, name);
-  auto ilpVar = vars.first;
+  // ILP expects inclusive ub. But ForOp ub is non-inclusive.
+  auto vars = this->addBoundedILPVar(lb, ub - 1, step, name);
+  auto *ilpVar = vars.first;
   mapValue2BoundedILPDestVar[ssaVar] = std::make_tuple(lb, ub, step, ilpVar);
   return ilpVar;
 }
@@ -274,31 +386,32 @@ void MemoryDependenceILPHandler::addHappensBeforeConstraintRow() {
   if (dest.getStaticPosition() > src.getStaticPosition()) {
     // If dest occurs after src in the original source code then the common
     // loops can all have same iv values.
-    constr = this->MakeRowConstraint(0, infinity(), "hb");
+    constr = this->MakeRowConstraint(0, infinity(), "happens-before");
   } else {
     // If dest occurs before src in the original source code then destination's
     // loop ivs must be lexicographically greater than the source.
-    constr = this->MakeRowConstraint(1, infinity(), "hb");
+    constr = this->MakeRowConstraint(1, infinity(), "happens-before");
   }
 
   int64_t coeff = 1;
   auto commonLoops = getCommonParentLoops();
-  for (size_t i = 1; i < commonLoops.size(); i++) {
+
+  while (!commonLoops.empty()) {
+    size_t loopNum = commonLoops.size() - 1;
     auto bounds = getConstantBounds(commonLoops.top());
     auto lb = std::get<0>(*bounds);
     auto ub = std::get<1>(*bounds);
-    auto step = std::get<2>(*bounds);
 
     // FIXME: If we used the canonical ivs (step=1) of each iv which is
     // calculated in getOrAddBoundedILPSrcVar, then we can reduce the size of
     // coeff (canonical iv's bound is 0 to (ub-lb)/step). This helps if coeff
     // overflows due to very large bounds and step size.
-    auto destVar = this->getOrAddBoundedILPDestVar(
-        lb, ub, step, "d" + to_string(i), commonLoops.top().getInductionVar());
-    constr->SetCoefficient(destVar, coeff);
-    auto srcVar = this->getOrAddBoundedILPSrcVar(
-        lb, ub, step, "s" + to_string(i), commonLoops.top().getInductionVar());
-    constr->SetCoefficient(srcVar, -coeff);
+    auto *destVar = this->getOrAddBoundedILPDestVar(
+        "d" + to_string(loopNum), commonLoops.top().getInductionVar());
+    addCoeff(constr, destVar, coeff);
+    auto *srcVar = this->getOrAddBoundedILPSrcVar(
+        "s" + to_string(loopNum), commonLoops.top().getInductionVar());
+    addCoeff(constr, srcVar, -coeff);
     coeff *= (ub - lb);
     commonLoops.pop();
   }
@@ -311,64 +424,53 @@ void MemoryDependenceILPHandler::addMemoryConstraints() {
   for (size_t dim = 0; dim < src.getNumMemDims(); dim++) {
     auto constCoeffDifference =
         src.getConstCoeff(dim) - dest.getConstCoeff(dim);
-    auto *constr = this->MakeRowConstraint(
-        constCoeffDifference, constCoeffDifference, "dim" + to_string(dim));
+    auto *constr =
+        this->MakeRowConstraint(constCoeffDifference, constCoeffDifference,
+                                "dim-equal:dim" + to_string(dim));
 
     for (size_t i = 0; i < destIndices.size(); i++) {
       auto idx = destIndices[i];
       auto coeff = dest.getIdxCoeff(idx, dim);
-      auto bounds = getConstantBounds(idx);
-      auto *var = getOrAddBoundedILPDestVar(
-          std::get<0>(*bounds), std::get<1>(*bounds), std::get<2>(*bounds),
-          "d" + to_string(i), idx);
-      constr->SetCoefficient(var, coeff);
+      auto *var = getOrAddBoundedILPDestVar("d" + to_string(i), idx);
+      addCoeff(constr, var, coeff);
     }
 
     for (size_t i = 0; i < srcIndices.size(); i++) {
       auto idx = srcIndices[i];
       auto coeff = src.getIdxCoeff(idx, dim);
       auto bounds = getConstantBounds(idx);
-      auto *var = getOrAddBoundedILPSrcVar(
-          std::get<0>(*bounds), std::get<1>(*bounds), std::get<2>(*bounds),
-          "s" + to_string(i), idx);
-      constr->SetCoefficient(var, -coeff);
+      auto *var = getOrAddBoundedILPSrcVar("s" + to_string(i), idx);
+      addCoeff(constr, var, -coeff);
     }
   }
 }
 
 void MemoryDependenceILPHandler::addObjective() {
-  int64_t coeff = 1;
-  auto commonLoops = getCommonParentLoops();
-  for (size_t i = 0; i < commonLoops.size(); i++) {
-    auto ii = getLoopII(commonLoops.top());
-    coeff *= ii;
-    commonLoops.pop();
-
-    auto *destVar = std::get<3>(
-        mapValue2BoundedILPDestVar[commonLoops.top().getInductionVar()]);
-    assert(destVar);
-    this->MutableObjective()->SetCoefficient(destVar, coeff);
-
-    auto *srcVar = std::get<3>(
-        mapValue2BoundedILPSrcVar[commonLoops.top().getInductionVar()]);
-    assert(srcVar);
-    this->MutableObjective()->SetCoefficient(srcVar, -coeff);
-    this->MutableObjective()->SetMinimization();
+  for (size_t i = 0; i < src.getNumParentLoops(); i++) {
+    auto parentLoop = src.getParentLoop(i);
+    auto loopPragma = AffineForPragmaHandler(parentLoop);
+    auto *iv =
+        std::get<3>(mapValue2BoundedILPSrcVar[parentLoop.getInductionVar()]);
+    assert(iv);
+    addCoeff(this->MutableObjective(), iv, -loopPragma.getII());
+  }
+  for (size_t i = 0; i < dest.getNumParentLoops(); i++) {
+    auto parentLoop = dest.getParentLoop(i);
+    auto loopPragma = AffineForPragmaHandler(parentLoop);
+    auto *iv =
+        std::get<3>(mapValue2BoundedILPDestVar[parentLoop.getInductionVar()]);
+    assert(iv);
+    addCoeff(this->MutableObjective(), iv, loopPragma.getII());
   }
 }
 
 //-----------------------------------------------------------------------------
 // SchedulingILPHandler.
 //-----------------------------------------------------------------------------
-Scheduler::Scheduler() : ILPSolver("SchedulingILP") {}
+Scheduler::Scheduler(llvm::raw_ostream &logger)
+    : ILPSolver("SchedulingILP", logger), varNum(0) {
 
-SmallVector<Operation *, 4> getOpAndParents(Operation *operation) {
-  SmallVector<Operation *, 4> opAndParents;
-  while (!isa<mlir::func::FuncOp>(operation)) {
-    opAndParents.push_back(operation);
-    operation = operation->getParentOp();
-  }
-  return opAndParents;
+  this->MutableObjective()->SetMinimization();
 }
 
 Optional<operations_research::MPVariable *>
@@ -380,47 +482,62 @@ Scheduler::getILPVar(mlir::Operation *op) {
 }
 
 operations_research::MPVariable *
-Scheduler::getOrAddTimeOffsetVar(mlir::Operation *op) {
+Scheduler::getOrAddTimeOffsetVar(mlir::Operation *op, std::string name) {
   auto var = getILPVar(op);
   if (var)
     return *var;
-  return this->addIntVar(0, infinity());
+  this->mapOperationToVar[op] = this->addIntVar(0, infinity(), name);
+  return *getILPVar(op);
 }
 
 void Scheduler::addDependenceConstraint(const DependenceConstraint dep) {
-  auto *constr = this->MakeRowConstraint();
+  // dest_time_offset - src_time_offset > delay.
+  // delay can be -ve `dep` is a loop-carried dependence.
+  auto *constr = this->MakeRowConstraint(dep.delay, infinity(), dep.name);
 
   // Add the time offsets of the dest op and all the enclosing regions to get
   // the total dest op time offset.
   for (auto *op : getOpAndParents(dep.dest))
-    constr->SetCoefficient(this->getOrAddTimeOffsetVar(op), 1);
+    addCoeff(constr,
+             this->getOrAddTimeOffsetVar(op, "t" + to_string(this->varNum++)),
+             1);
 
   // Subtract the total src op time offset.
-  for (auto *op : getOpAndParents(dep.src))
-    constr->SetCoefficient(this->getOrAddTimeOffsetVar(op), -1);
-
-  // dest_time_offset - src_time_offset > delay.
-  // delay can be -ve `dep` is a loop-carried dependence.
-  constr->SetBounds(dep.delay, infinity());
+  for (auto *op : getOpAndParents(dep.src)) {
+    addCoeff(constr,
+             this->getOrAddTimeOffsetVar(op, "t" + to_string(this->varNum++)),
+             -1);
+  }
 }
 
-void Scheduler::addResourceConstraint(const ResourceConstraint resc) {}
+void Scheduler::addResourceConstraint(const ResourceConstraint resc) {
+  assert(false && "UNIMPLEMENTED"); // FIXME
+}
 
 void Scheduler::addDelayRegisterCost(DependenceConstraint dep, size_t width) {
   auto srcVar = this->getILPVar(dep.src);
   auto destVar = this->getILPVar(dep.dest);
   assert(srcVar);
   assert(destVar);
-  this->MutableObjective()->SetCoefficient(*destVar, 1);
-  this->MutableObjective()->SetCoefficient(*srcVar, -1);
+  addCoeff(this->MutableObjective(), *destVar, 1);
+  auto srcCoeff = this->MutableObjective()->GetCoefficient(*srcVar);
+  addCoeff(this->MutableObjective(), *srcVar, srcCoeff - 1);
 }
 
 int64_t Scheduler::getTimeOffset(mlir::Operation *op) {
   auto var = this->getILPVar(op);
-  assert(var);
+  if (!var) {
+    // op->emitError(
+    //     "Could not find time offset for this op. Setting it as zero.");
+    return 0;
+  }
   return (*var)->solution_value();
 }
 
-int64_t Scheduler::getRequiredNumResources(ResourceConstraint) {}
+int64_t Scheduler::getRequiredNumResources(ResourceConstraint) {
+  assert(false && "UNIMPLEMENTED"); // FIXME
+}
 
-int64_t Scheduler::getResourceIdx(ResourceConstraint, mlir::Operation *) {}
+int64_t Scheduler::getResourceIdx(ResourceConstraint, mlir::Operation *) {
+  assert(false && "UNIMPLEMENTED"); // FIXME
+}

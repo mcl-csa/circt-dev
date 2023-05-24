@@ -17,6 +17,13 @@ def OptBitWidth : Pass<"hir-opt-bitwidth", "hir::FuncOp"> {
   let dependentDialects = ["hir::HIRDialect"];
 }
 
+def OpFusion : Pass<"hir-fuse-op", "hir::FuncOp"> {
+  let summary = ".";
+  let description = [{This pass fuses operations.}];
+  let constructor = "circt::hir::createOpFusionPass()";
+  let dependentDialects = ["hir::HIRDialect"];
+}
+
 def OptDelay : Pass<"hir-opt-delay", "hir::FuncOp"> {
   let summary = ".";
   let description = [{This pass hir.delay (and thus shiftreg/LUT) if the enclosing scope has large initiation interval.}];

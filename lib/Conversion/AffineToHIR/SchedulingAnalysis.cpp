@@ -1,162 +1,77 @@
 #include "circt/Conversion/SchedulingAnalysis.h"
+#include "PragmaHandler.h"
 #include "circt/Conversion/SchedulingUtils.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Visitors.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cstdlib>
+#include <iostream>
 #include <memory>
-//-----------------------------------------------------------------------------
-// class OpInfo methods.
-//-----------------------------------------------------------------------------
 using namespace mlir;
-OpInfo::OpInfo(Operation *operation, int staticPos)
-    : operation(operation), staticPos(staticPos) {
-  auto *currentOperation = operation;
-  while (auto affineForOp = currentOperation->getParentOfType<AffineForOp>()) {
-    parentLoops.push_back(affineForOp);
-    parentLoopIVs.push_back(affineForOp.getInductionVar());
-    currentOperation = affineForOp;
-  }
-}
 
-Operation *OpInfo::getOperation() { return operation; }
-int OpInfo::getStaticPosition() { return staticPos; }
-size_t OpInfo::getNumParentLoops() { return parentLoops.size(); }
-AffineForOp OpInfo::getParentLoop(int i) { return parentLoops[i]; }
-Value OpInfo::getParentLoopIV(int i) { return parentLoopIVs[i]; }
-
-MemOpInfo::MemOpInfo(mlir::AffineLoadOp operation, int staticPos)
-    : OpInfo(operation, staticPos) {}
-
-MemOpInfo::MemOpInfo(mlir::AffineStoreOp operation, int staticPos)
-    : OpInfo(operation, staticPos) {}
-
-Value MemOpInfo::getMemRef() {
-  if (auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation()))
-    return storeOp.getMemRef();
-  auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation());
-  assert(loadOp);
-  return loadOp.getMemRef();
-}
-
-int64_t MemOpInfo::getDelay() {
-  return getOperation()->getAttrOfType<IntegerAttr>("hir.delay").getInt();
-}
-
-size_t MemOpInfo::getNumMemDims() {
-  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation()))
-    return loadOp.getAffineMap().getNumDims();
-
-  auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation());
-  assert(storeOp);
-  return storeOp.getAffineMap().getNumDims();
-}
-
-int64_t MemOpInfo::getConstCoeff(int64_t dim) {
-  SmallVector<int64_t> coeffs;
-  AffineExpr expr;
-  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation())) {
-    expr = loadOp.getAffineMap().getResult(dim);
-  } else {
-    auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation());
-    expr = storeOp.getAffineMap().getResult(dim);
-  }
-
-  // If the expression could not be flattened then treat the whole dim as zero
-  // (i.e. all accesses alias on this dim).
-  if (failed(getFlattenedAffineExpr(expr, getNumMemDims(), 0, &coeffs)))
-    return 0;
-
-  return coeffs.back();
-}
-
-int64_t MemOpInfo::getIdxCoeff(mlir::Value var, int64_t dim) {
-  auto indices = getIndices();
-  Optional<size_t> varLoc = llvm::None;
-  AffineExpr expr;
-
-  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation())) {
-    expr = loadOp.getAffineMap().getResult(dim);
-    for (size_t i = 0; i < indices.size(); i++) {
-      if (indices[i] == var) {
-        varLoc = i;
-        break;
-      }
-    }
-  } else if (auto storeOp = dyn_cast<AffineLoadOp>(this->getOperation())) {
-    expr = storeOp.getAffineMap().getResult(dim);
-    for (size_t i = 0; i < indices.size(); i++) {
-      if (indices[i] == var) {
-        varLoc = i;
-        break;
-      }
-    }
-  } else {
-    assert(false && "Must be a affine load or store op.");
-  }
-
-  if (!varLoc)
-    return 0;
-
-  SmallVector<int64_t> coeffs;
-  if (failed(getFlattenedAffineExpr(expr, getNumMemDims(), 0, &coeffs)))
-    return 0;
-
-  return coeffs[*varLoc];
-}
-
-SmallVector<int64_t, 4>
-MemOpInfo::getIdxCoeffs(mlir::ArrayRef<mlir::Value> indices, int64_t dim) {
-
-  SmallVector<int64_t, 4> coeffs;
-  for (auto idx : indices)
-    coeffs.push_back(this->getIdxCoeff(idx, dim));
-
-  return coeffs;
-}
-
-llvm::SmallVector<mlir::Value> MemOpInfo::getIndices() {
-  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation()))
-    return loadOp.getIndices();
-
-  auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation());
-  assert(storeOp);
-  return storeOp.getIndices();
+//-----------------------------------------------------------------------------
+// Helper functions.
+//-----------------------------------------------------------------------------
+/// Finds the containing user (such as a ForOp) that is immediately in the
+/// lexical scope.
+static Operation *getOpContainingUserInScope(Operation *user, Region *scope) {
+  while (user->getParentRegion() != scope)
+    user = user->getParentOp();
+  return user;
 }
 
 //-----------------------------------------------------------------------------
 // class SchedulingAnalysis methods.
 //-----------------------------------------------------------------------------
-SchedulingAnalysis::SchedulingAnalysis(mlir::func::FuncOp op)
-    : funcOp(op), scheduler(std::make_unique<Scheduler>()) {}
+HIRScheduler::HIRScheduler(mlir::func::FuncOp op, llvm::raw_ostream &logger)
+    : Scheduler(logger), funcOp(op) {}
 
-int64_t SchedulingAnalysis::getTimeOffset(Operation *operation) {
-  return scheduler->getTimeOffset(operation);
+int64_t HIRScheduler::getPortNumForMemoryOp(Operation *operation) {
+  // FIXME: Handle multiple read/write ports.
+  if (auto loadOp = dyn_cast<AffineLoadOp>(operation)) {
+    auto pragma = MemrefPragmaHandler(loadOp.getMemref());
+    assert(pragma.getNumRdPorts() == 1);
+    for (int i = 0; i < pragma.getNumPorts(); i++) {
+      if (pragma.getPortKind(i) == MemrefPragmaHandler::PortKind::READ_ONLY ||
+          pragma.getPortKind(i) == MemrefPragmaHandler::PortKind::READ_WRITE) {
+        return i;
+      }
+    }
+  }
+  auto storeOp = dyn_cast<AffineStoreOp>(operation);
+  auto pragma = MemrefPragmaHandler(storeOp.getMemref());
+  assert(pragma.getNumWrPorts() == 1);
+  for (int i = 0; i < pragma.getNumPorts(); i++) {
+    if (pragma.getPortKind(i) == MemrefPragmaHandler::PortKind::WRITE_ONLY ||
+        pragma.getPortKind(i) == MemrefPragmaHandler::PortKind::READ_WRITE) {
+      return i;
+    }
+  }
+  operation->emitError("Could not find port.");
+  return 0;
 }
 
-int64_t SchedulingAnalysis::getPortNumForMemoryOp(Operation *operation) {
-  assert(isa<AffineLoadOp>(operation) || isa<AffineStoreOp>(operation));
-  // FIXME
-}
-
-LogicalResult SchedulingAnalysis::insertDependencies() {
+LogicalResult HIRScheduler::insertMemoryDependencies() {
   SmallVector<MemOpInfo> memOperations;
   funcOp.walk([&memOperations](Operation *operation) {
-    if (auto loadOp = dyn_cast<AffineLoadOp>(operation))
-      memOperations.push_back(MemOpInfo(loadOp, memOperations.size()));
-    else if (auto storeOp = dyn_cast<AffineStoreOp>(operation))
-      memOperations.push_back(MemOpInfo(storeOp, memOperations.size()));
+    if (isa<AffineLoadOp, AffineStoreOp>(operation))
+      memOperations.push_back(MemOpInfo(operation, memOperations.size()));
     return WalkResult::advance();
   });
+
   for (size_t i = 0; i < memOperations.size(); i++) {
-    auto srcOp = memOperations[i];
+    auto srcOpInfo = memOperations[i];
     for (size_t j = 0; j < memOperations.size(); j++) {
-      auto destOp = memOperations[j];
-      if (srcOp.getMemRef() != destOp.getMemRef())
+      auto destOpInfo = memOperations[j];
+      if (srcOpInfo.getMemRef() != destOpInfo.getMemRef())
         continue;
 
       // FIXME: Currently we assume load-to-load dependence to avoid port
@@ -164,27 +79,93 @@ LogicalResult SchedulingAnalysis::insertDependencies() {
       // if (isa<AffineLoadOp>(srcOp) && isa<AffineLoadOp>(destOp))
       //  continue;
 
-      MemoryDependenceILPHandler memoryDependenceILP(srcOp, destOp);
-      if (memoryDependenceILP.Solve() !=
-          MemoryDependenceILPHandler::ResultStatus::OPTIMAL)
-        return srcOp.getOperation()
-                   ->emitError("Could not calculate slack.")
-                   .attachNote(destOp.getOperation()->getLoc())
-               << "destination op here.";
+      logger << "\n=========================================\n";
+      logger << "MemoryDependenceILP:";
+      logger << "\n=========================================\n\n";
+      MemoryDependenceILPHandler memoryDependenceILP(srcOpInfo, destOpInfo,
+                                                     logger);
+
+      // If the solution is not found then there is no dependence between the
+      // operations.
+
+      logger << "Source:";
+      srcOpInfo.getOperation()->getLoc().print(logger);
+      logger << "\nDest:";
+      destOpInfo.getOperation()->getLoc().print(logger);
+      logger << "\n\nILP:\n";
+      logger << "----\n";
+      memoryDependenceILP.solve();
+      memoryDependenceILP.dump();
+
+      if (!memoryDependenceILP.isSolved()) {
+        logger << "\nNo dependence found.\n";
+        logger << "\n=========================================\n\n";
+        continue;
+      }
       int64_t dist = (int64_t)memoryDependenceILP.Objective().Value();
+      logger << "\nDependence found. dist= " << dist << "\n";
+      logger << "\n=========================================\n\n";
 
       // FIXME: Currently we assume a simple dual port RAM.
       bool const portConflict =
-          (isa<AffineLoadOp>(srcOp) && isa<AffineLoadOp>(destOp)) ||
-          (isa<AffineStoreOp>(srcOp) && isa<AffineStoreOp>(destOp));
+          (isa<AffineLoadOp>(srcOpInfo.getOperation()) &&
+           isa<AffineLoadOp>(destOpInfo.getOperation())) ||
+          (isa<AffineStoreOp>(srcOpInfo.getOperation()) &&
+           isa<AffineStoreOp>(destOpInfo.getOperation()));
 
-      int64_t delay = isa<AffineLoadOp>(srcOp.getOperation())
+      int64_t delay = isa<AffineLoadOp>(srcOpInfo.getOperation())
                           ? (portConflict ? 1 : 0)
-                          : srcOp.getDelay();
-      DependenceConstraint dep(srcOp.getOperation(), destOp.getOperation(),
-                               dist + delay);
-      this->scheduler->addDependenceConstraint(dep);
+                          : srcOpInfo.getDelay();
+      assert(delay >= 0);
+      DependenceConstraint dep("mem_dep", srcOpInfo.getOperation(),
+                               destOpInfo.getOperation(), delay - dist);
+      this->addDependenceConstraint(dep);
     }
+  }
+  return success();
+}
+
+LogicalResult HIRScheduler::insertSSADependencies() {
+  auto walkResult = funcOp.walk([this](Operation *operation) {
+    if (operation->getNumResults() == 0)
+      return WalkResult::advance();
+
+    if (isa<arith::ConstantOp, AffineForOp, memref::AllocaOp>(operation))
+      return WalkResult::advance();
+
+    int64_t delay;
+    if (isa<arith::ArithmeticDialect>(operation->getDialect()))
+      delay = ArithOpInfo(operation).getDelay();
+    else if (isa<AffineLoadOp, AffineStoreOp>(operation))
+      delay = MemOpInfo(operation, 0 /*dont care*/).getDelay();
+    else {
+      llvm_unreachable("Unknown operation.");
+    }
+
+    for (auto result : operation->getResults()) {
+      for (auto *user : result.getUsers()) {
+        auto *userAtThisScope =
+            getOpContainingUserInScope(user, operation->getParentRegion());
+        DependenceConstraint dep("ssa_dep", operation, userAtThisScope, delay);
+        this->addDependenceConstraint(dep);
+        this->addDelayRegisterCost(dep,
+                                   result.getType().getIntOrFloatBitWidth());
+      }
+    }
+    return WalkResult::advance();
+  });
+  if (walkResult.wasInterrupted())
+    return failure();
+  return success();
+}
+
+LogicalResult HIRScheduler::init() {
+  if (failed(insertMemoryDependencies()))
+    return failure();
+  if (failed(insertSSADependencies()))
+    return failure();
+  if (this->solve() != ResultStatus::OPTIMAL) {
+    return this->dump(), funcOp->emitError("Could not find schedule.");
   }
   return success();
 }

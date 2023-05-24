@@ -132,7 +132,7 @@ using Key = std::pair<Attribute, Attribute>;
 
 /// A tapped port, described as the module/extmodule operation and the port
 /// number.
-struct Port : std::pair<Operation *, unsigned> {
+struct PortAttr : std::pair<Operation *, unsigned> {
   using std::pair<Operation *, unsigned>::pair;
   operator bool() const { return bool(first); }
 };
@@ -503,7 +503,7 @@ class GrandCentralTapsPass : public GrandCentralTapsBase<GrandCentralTapsPass> {
                          InstancePathCache &instancePaths);
 
   // Helpers to simplify collecting taps on the various things.
-  void gatherTap(Annotation anno, Port port) {
+  void gatherTap(Annotation anno, PortAttr port) {
     auto key = getKey(anno);
     annos.insert({key, anno});
     assert(!tappedPorts.count(key) && "ambiguous tap annotation");
@@ -556,7 +556,7 @@ class GrandCentralTapsPass : public GrandCentralTapsBase<GrandCentralTapsPass> {
   DenseMap<Key, Annotation> annos;
   DenseMap<Key, Operation *> tappedOps;
   DenseSet<Key> zeroWidthTaps;
-  DenseMap<Key, Port> tappedPorts;
+  DenseMap<Key, PortAttr> tappedPorts;
   SmallVector<PortWiring, 8> portWiring;
 
   /// The name of the directory where data and mem tap modules should be
@@ -926,7 +926,7 @@ void GrandCentralTapsPass::gatherAnnotations(Operation *op) {
     // Handle port annotations on module/extmodule ops.
     auto gather = [&](unsigned argNum, Annotation anno) {
       if (anno.isClass(referenceKeySourceClass)) {
-        gatherTap(anno, Port{op, argNum});
+        gatherTap(anno, PortAttr{op, argNum});
         return true;
       }
       return false;

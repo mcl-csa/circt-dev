@@ -86,6 +86,10 @@ LogicalResult FuncOp::verify() {
             continue;
           auto ports = helper::extractMemrefPortsFromDict(
               this->getFuncType().getInputAttrs()[i]);
+
+          if (ports.getValue().size() <= port.getValue())
+            return use.getOwner()->emitError()
+                   << "specified port does not exist.";
           auto loadOpPort = ports.getValue()[port.getValue()];
           if (!helper::isMemrefRdPort(loadOpPort))
             return use.getOwner()->emitError()
@@ -96,6 +100,11 @@ LogicalResult FuncOp::verify() {
             continue;
           auto ports = helper::extractMemrefPortsFromDict(
               this->getFuncType().getInputAttrs()[i]);
+
+          if (ports.getValue().size() <= port.getValue())
+            return use.getOwner()->emitError()
+                   << "specified port does not exist.";
+
           auto storeOpPort = ports.getValue()[port.getValue()];
           if (!helper::isMemrefWrPort(storeOpPort))
             return use.getOwner()->emitError()

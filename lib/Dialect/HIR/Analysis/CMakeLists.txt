@@ -6,4 +6,3 @@ MLIRTransformUtils
 CIRCTHIR
 )
 
-target_link_libraries(CIRCTHIRAnalysis PRIVATE -lglpk)

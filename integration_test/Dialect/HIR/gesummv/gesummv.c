@@ -13,26 +13,21 @@ void gesummv_hir(int alpha, int beta, int tmp[8], int A[8][8], int B[8][8],
 
   // #pragma scop
   for (int i = 0; i < 8; i++) {
-    // #pragma HLS pipeline II = 18
+    #pragma HLS pipeline II = 18
     int tmp_reg[1] = {0};
     int y_reg = 0;
     for (int j = 0; j < 8; j++) {
-      // #pragma HLS pipeline II = 1
+      #pragma HLS pipeline II = 1
       int xj = X[j];
-      // int t1 = mul_i32(A[i][j], xj);
-      int t1 = A[i][j] * X[j];
-      // int t2 = mul_i32(B[i][j], xj);
-      int t2 = B[i][j] * X[j];
-      // tmp_reg[0] = add_i32(tmp_reg[0], t1);
+      int t1 = mul_i32(A[i][j], xj);
+      int t2 = mul_i32(B[i][j], xj);
 
       tmp_reg[0] += t1;
-      // y_reg = add_i32(y_reg, t2);
       y_reg = y_reg + t2;
     }
     tmp[i] = tmp_reg[0];
     int y_i = y_reg;
-    // Y[i] = add_i32(mul_i32(alpha, tmp_reg[0]), mul_i32(beta, y_i));
-    Y[i] = alpha * tmp_reg[0] + beta * y_i;
+    Y[i] = mul_i32(alpha, tmp_reg[0])+ mul_i32(beta, y_i);
   }
   // #pragma endscop
 }

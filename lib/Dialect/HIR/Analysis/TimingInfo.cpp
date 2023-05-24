@@ -2,7 +2,6 @@
 #include "circt/Dialect/Comb/CombDialect.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HW/HWOps.h"
-#include "glpk.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 
 using namespace circt;

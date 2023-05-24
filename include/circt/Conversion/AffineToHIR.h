@@ -54,11 +54,11 @@ private:
   mlir::LogicalResult visitOp(mlir::arith::ConstantOp);
   mlir::LogicalResult visitOp(mlir::memref::AllocaOp);
   mlir::LogicalResult visitOp(mlir::func::CallOp);
-  mlir::LogicalResult visitFFIOp(Operation *);
+  mlir::LogicalResult visitArithOp(Operation *);
 
 private:
   mlir::OpBuilder builder;
-  std::unique_ptr<SchedulingAnalysis> schedulingAnalysis;
+  HIRScheduler *scheduler;
   mlir::Optional<BlockArgManager> blkArgManager;
   ValueConverter valueConverter;
   std::stack<OpBuilder::InsertionGuard> insertionGuards;

@@ -8,6 +8,7 @@
 
 #include "circt/Conversion/AffineToHIR.h"
 #include "../PassDetail.h"
+#include "PragmaHandler.h"
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
@@ -24,10 +25,12 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/Visitors.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
 #include <iostream>
 
 using namespace mlir;
@@ -316,8 +319,9 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineForOp op) {
       builder.getUnknownLoc(), builder.getI64IntegerAttr(originalStep));
 
   Value tRegion = builder.getInsertionBlock()->getArguments().back();
-  auto loopII = schedulingAnalysis->getLoopII(op);
-  auto offset = schedulingAnalysis->getTimeOffset(op);
+
+  auto loopII = op->getAttrOfType<IntegerAttr>("II").getInt();
+  auto offset = scheduler->getTimeOffset(op);
   auto offsetAttr = builder.getI64IntegerAttr(offset);
 
   auto capturedValues =
@@ -378,11 +382,11 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineForOp op) {
 
 LogicalResult AffineToHIRImpl::visitOp(mlir::AffineLoadOp op) {
   auto hirMem = valueConverter.getMemref(op.getMemRef());
-
-  auto portAndDelay = schedulingAnalysis->getPortNumAndDelayForMemoryOp(op);
-  auto port = builder.getI64IntegerAttr(portAndDelay.first);
-  auto delay = builder.getI64IntegerAttr(portAndDelay.second);
-  auto offset = schedulingAnalysis->getTimeOffset(op);
+  auto port = scheduler->getPortNumForMemoryOp(op);
+  auto portAttr = builder.getI64IntegerAttr(port);
+  auto memrefPragmas = MemrefPragmaHandler(op.getMemref());
+  auto delayAttr = builder.getI64IntegerAttr(memrefPragmas.getRdLatency());
+  auto offset = scheduler->getTimeOffset(op);
   auto offsetAttr = builder.getI64IntegerAttr(offset);
   auto tRegion = builder.getInsertionBlock()->getArguments().back();
   assert(tRegion);
@@ -391,7 +395,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineLoadOp op) {
       hirMem.getType().dyn_cast<hir::MemrefType>(), tRegion, offset);
   auto loadOp = builder.create<hir::LoadOp>(
       op->getLoc(), getHIRValueType(op.getResult().getType()), hirMem,
-      hirIndices, port, delay, tRegion, offsetAttr);
+      hirIndices, portAttr, delayAttr, tRegion, offsetAttr);
   auto resultDelay = op->getAttrOfType<ArrayAttr>("result_delays")[0]
                          .dyn_cast<IntegerAttr>()
                          .getInt();
@@ -405,11 +409,12 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineStoreOp op) {
 
   Value hirMem = valueConverter.getMemref(op.getMemRef());
 
-  auto portAndDelay = schedulingAnalysis->getPortNumAndDelayForMemoryOp(op);
-  auto port = builder.getI64IntegerAttr(portAndDelay.first);
-  auto delay = builder.getI64IntegerAttr(portAndDelay.second);
+  auto port = scheduler->getPortNumForMemoryOp(op);
+  auto portAttr = builder.getI64IntegerAttr(port);
+  auto memrefPragmas = MemrefPragmaHandler(op.getMemref());
+  auto delayAttr = builder.getI64IntegerAttr(memrefPragmas.getWrLatency());
 
-  int64_t const offset = schedulingAnalysis->getTimeOffset(op);
+  int64_t const offset = scheduler->getTimeOffset(op);
   auto offsetAttr = builder.getI64IntegerAttr(offset);
   auto tRegion = builder.getInsertionBlock()->getArguments().back();
   assert(tRegion);
@@ -421,7 +426,8 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineStoreOp op) {
       builder, op.getValue(), tRegion, offset);
 
   builder.create<hir::StoreOp>(op->getLoc(), hirValue.getValue(), hirMem,
-                               hirIndices, port, delay, tRegion, offsetAttr);
+                               hirIndices, portAttr, delayAttr, tRegion,
+                               offsetAttr);
   return success();
 }
 
@@ -453,7 +459,8 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::arith::ConstantOp op) {
         op.getValue().dyn_cast<mlir::FloatAttr>().getValue().bitcastToAPInt();
     auto bitsAttr =
         IntegerAttr::get(builder.getIntegerType(bits.getBitWidth()), bits);
-    Value v = builder.create<circt::hw::ConstantOp>(op->getLoc(), bitsAttr);
+    Value v = builder.create<circt::hw::ConstantOp>(op->getLoc(), bitsAttr)
+                  .getResult();
     valueConverter.mapValueToHIRValue(op.getResult(), HIRValue(v),
                                       v.getParentBlock());
     return success();
@@ -500,7 +507,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::CallOp op) {
       op->getParentOfType<mlir::ModuleOp>().lookupSymbol(op.getCalleeAttr()));
   assert(hirFuncExternOp);
   Value tRegion = builder.getInsertionBlock()->getArguments().back();
-  auto offset = schedulingAnalysis->getTimeOffset(op);
+  auto offset = scheduler->getTimeOffset(op);
   auto offsetAttr = builder.getI64IntegerAttr(offset);
   auto hirOperands = valueConverter.getBlockLocalValues(
       builder, op->getOperands(), tRegion, offset);
@@ -547,24 +554,10 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::CallOp op) {
   return success();
 }
 
-LogicalResult AffineToHIRImpl::visitFFIOp(Operation *operation) {
-  auto hirFuncAttr =
-      operation->getAttrOfType<mlir::FlatSymbolRefAttr>("hir_function");
-  if (!hirFuncAttr)
-    return operation->emitError("Could not find hir_function attribute");
+LogicalResult AffineToHIRImpl::visitArithOp(Operation *operation) {
 
-  auto topLevelModuleOp = operation->getParentOfType<mlir::ModuleOp>();
-  assert(topLevelModuleOp);
-  auto *hirFuncExternOperation = topLevelModuleOp.lookupSymbol(hirFuncAttr);
-  if (!hirFuncExternOperation)
-    return operation->emitError("Could not find declaration of hir function ")
-           << hirFuncAttr << ".";
-
-  auto hirFuncExternOp = dyn_cast<hir::FuncExternOp>(hirFuncExternOperation);
-  assert(hirFuncExternOp);
   Value tRegion = builder.getInsertionBlock()->getArguments().back();
-  auto offset = schedulingAnalysis->getTimeOffset(operation);
-  auto offsetAttr = builder.getI64IntegerAttr(offset);
+  auto offset = scheduler->getTimeOffset(operation);
   auto hirOperands = valueConverter.getBlockLocalValues(
       builder, operation->getOperands(), tRegion, offset);
 
@@ -572,26 +565,23 @@ LogicalResult AffineToHIRImpl::visitFFIOp(Operation *operation) {
   for (auto hirOperand : hirOperands) {
     operands.push_back(hirOperand.getValue());
   }
-  auto callOp = builder.create<hir::CallOp>(
-      operation->getLoc(), getHIRValueTypes(operation->getResultTypes()),
-      builder.getStringAttr(hirFuncAttr.getValue().str() + "_inst" +
-                            std::to_string(this->instNum++)),
-      hirFuncAttr, hirFuncExternOp.funcTyAttr(), operands, tRegion, offsetAttr);
-  assert(callOp->getNumResults() == operation->getNumResults());
-  auto resultDelays = operation->getAttrOfType<ArrayAttr>("result_delays");
-  if (!resultDelays && callOp->getNumResults() > 0) {
-    return operation->emitError("Could not find result_delays");
+  Operation *combOp;
+  if (auto addIOp = dyn_cast<arith::AddIOp>(operation)) {
+    combOp = builder.create<comb::AddOp>(operation->getLoc(), operands[0],
+                                         operands[1]);
+  } else if (auto subIOp = dyn_cast<arith::SubIOp>(operation)) {
+    combOp = builder.create<comb::SubOp>(operation->getLoc(), operands[0],
+                                         operands[1]);
+  } else if (auto mulIOp = dyn_cast<arith::MulIOp>(operation)) {
+    combOp = builder.create<comb::MulOp>(operation->getLoc(), operands[0],
+                                         operands[1]);
+  } else {
+    return operation->emitError("Unknown arith operation.");
   }
-  if (resultDelays.size() != operation->getNumResults()) {
-    return operation->emitError("Number of result delays is wrong.");
-  }
-  for (size_t i = 0; i < callOp->getNumResults(); i++) {
-    auto resultDelay = resultDelays[i].dyn_cast<IntegerAttr>().getInt();
-    valueConverter.mapValueToHIRValue(
-        operation->getResult(i),
-        HIRValue(callOp->getResult(i), tRegion, offset + resultDelay),
-        callOp->getBlock());
-  }
+
+  valueConverter.mapValueToHIRValue(
+      operation->getResult(0), HIRValue(combOp->getResult(0), tRegion, offset),
+      combOp->getBlock());
   return success();
 }
 
@@ -617,28 +607,8 @@ LogicalResult AffineToHIRImpl::visitOperation(Operation *operation) {
   if (auto op = dyn_cast<hir::ProbeOp>(operation))
     return visitOp(op);
   if (isa<arith::ArithmeticDialect>(operation->getDialect()))
-    return visitFFIOp(operation);
-  if (isa<mlir::func::CallOp>(operation))
-    return visitFFIOp(operation);
+    return visitArithOp(operation);
   return operation->emitError("Unknown operation for affine-to-hir pass.");
-}
-
-llvm::SmallVector<FusedOp> getFusedOps(mlir::func::FuncOp funcOp) {
-  llvm::SmallVector<FusedOp> fusedOps;
-  DenseMap<StringRef, SmallVector<Operation *>> mapInstNameToOperations;
-  funcOp.walk([&mapInstNameToOperations](Operation *operation) {
-    if (operation->hasAttrOfType<StringAttr>("instance_name"))
-      mapInstNameToOperations
-          [operation->getAttrOfType<StringAttr>("instance_name").strref()]
-              .push_back(operation);
-  });
-  for (auto kv : mapInstNameToOperations) {
-    if (kv.getSecond().size() == 1)
-      continue;
-    FusedOp const fusedOp(kv.getFirst(), kv.getSecond(), 6, 1);
-    fusedOps.push_back(fusedOp);
-  }
-  return fusedOps;
 }
 
 void AffineToHIRImpl::runOnOperation() {
@@ -648,9 +618,13 @@ void AffineToHIRImpl::runOnOperation() {
 
   getOperation().walk([this, logFile](Operation *operation) {
     if (auto funcOp = dyn_cast<mlir::func::FuncOp>(operation)) {
-      auto fusedOps = getFusedOps(funcOp);
-      schedulingAnalysis = std::make_unique<SchedulingAnalysis>(
-          SchedulingAnalysis(funcOp, fusedOps, logFile));
+      auto funcScheduler =
+          HIRScheduler(funcOp, dbg ? llvm::outs() : llvm::nulls());
+      this->scheduler = &funcScheduler;
+
+      if (failed(scheduler->init()))
+        return WalkResult::interrupt();
+
       blkArgManager = BlockArgManager(funcOp);
       if (funcOp->getAttr("hwAccel")) {
         funcOp.walk<WalkOrder::PreOrder>([this](Operation *operation) {
@@ -662,7 +636,6 @@ void AffineToHIRImpl::runOnOperation() {
       }
       funcOp->erase();
     }
-
     return WalkResult::advance();
   });
 }
