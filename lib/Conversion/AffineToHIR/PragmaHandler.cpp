@@ -6,8 +6,7 @@
 #include "llvm/ADT/SmallVector.h"
 using namespace mlir;
 
-MemrefPragmaHandler::MemrefPragmaHandler(Value memref)
-    : numRdPorts(0), numWrPorts(0) {
+MemrefPragmaHandler::MemrefPragmaHandler(Value memref) : ramKind(SMP) {
   assert(memref.getType().isa<mlir::MemRefType>());
 
   std::string memKindStr;
@@ -31,6 +30,7 @@ MemrefPragmaHandler::MemrefPragmaHandler(Value memref)
   }
 
   // ports
+  int64_t portID = 0;
   for (auto portAttr : portAttrs) {
     auto rdLatAttr = portAttr.dyn_cast<DictionaryAttr>().get("rd_latency");
     auto wrLatAttr = portAttr.dyn_cast<DictionaryAttr>().get("wr_latency");
@@ -49,23 +49,35 @@ MemrefPragmaHandler::MemrefPragmaHandler(Value memref)
 
     if (rdLatAttr && wrLatAttr) {
       this->ports.push_back(READ_WRITE);
-      this->numRdPorts++;
-      this->numWrPorts++;
+      this->rdPorts.push_back(portID);
+      this->wrPorts.push_back(portID);
+      // All ports must be read-write XOR (read-only OR write-only)
+      assert(portID == 0 | ramKind == TMP);
+      ramKind = TMP;
     } else if (rdLatAttr) {
       this->ports.push_back(READ_ONLY);
-      this->numRdPorts++;
+      this->rdPorts.push_back(portID);
+      // All ports must be read-write XOR (read-only OR write-only)
+      assert(ramKind == SMP);
     } else if (wrLatAttr) {
       this->ports.push_back(WRITE_ONLY);
-      this->numWrPorts++;
+      this->wrPorts.push_back(portID);
+      // All ports must be read-write XOR (read-only OR write-only)
+      assert(ramKind == SMP);
     }
+    portID++;
   }
 }
 
-int64_t MemrefPragmaHandler::getNumPorts() { return ports.size(); }
-size_t MemrefPragmaHandler::getNumRdPorts() { return numRdPorts; }
-size_t MemrefPragmaHandler::getNumWrPorts() { return numWrPorts; }
+int64_t MemrefPragmaHandler::getRdPortID(int64_t n) { return rdPorts[n]; }
+int64_t MemrefPragmaHandler::getWrPortID(int64_t n) { return wrPorts[n]; }
+size_t MemrefPragmaHandler::getNumRdPorts() { return rdPorts.size(); }
+size_t MemrefPragmaHandler::getNumWrPorts() { return wrPorts.size(); }
 MemrefPragmaHandler::PortKind MemrefPragmaHandler::getPortKind(int portNum) {
   return ports[portNum];
+}
+MemrefPragmaHandler::RAMKind MemrefPragmaHandler::getRAMKind() {
+  return ramKind;
 }
 int64_t MemrefPragmaHandler::getRdLatency() {
   return this->rdLatency.getValue();

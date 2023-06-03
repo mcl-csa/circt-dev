@@ -18,9 +18,16 @@ public:
 
 private:
   using Scheduler::logger;
-  mlir::LogicalResult insertMemoryDependencies();
+  mlir::LogicalResult insertMemAccessConstraints();
+  mlir::LogicalResult insertMemoryDependence(MemOpInfo src, MemOpInfo dest);
+  mlir::LogicalResult insertPortConflict(MemOpInfo src, MemOpInfo dest);
   mlir::LogicalResult insertSSADependencies();
+  [[nodiscard]] MemPortResource *getOrAddRdPortResource(mlir::Value);
+  [[nodiscard]] MemPortResource *getOrAddWrPortResource(mlir::Value);
   mlir::func::FuncOp funcOp;
+  llvm::DenseMap<mlir::Value, MemPortResource *> mapMemref2RdPortResource;
+  llvm::DenseMap<mlir::Value, MemPortResource *> mapMemref2WrPortResource;
+  llvm::SmallVector<MemPortResource> portResources;
 };
 
 #endif

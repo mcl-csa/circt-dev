@@ -7,6 +7,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Operation.h"
 #include "ortools/linear_solver/linear_solver.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstdint>
 #include <stack>
@@ -51,7 +52,7 @@ private:
   // order & to uniquely identify the static op.
 };
 
-struct MemOpInfo : public OpInfo {
+struct MemOpInfo : OpInfo {
   MemOpInfo(mlir::Operation *, int staticPos);
   ~MemOpInfo() override {}
   mlir::Value getMemRef();
@@ -60,7 +61,7 @@ struct MemOpInfo : public OpInfo {
   llvm::SmallVector<mlir::Value> getIndices();
   int64_t getDelay() override;
   bool isConstant() override;
-
+  bool isLoad();
   /// Get the coefficient for the 'var' in the flattened affine expression
   /// of the specific 'dim'.
   /// If the var is not in the expr it can not be flattened then it returns
@@ -72,7 +73,7 @@ struct MemOpInfo : public OpInfo {
   getIdxCoeffs(mlir::ArrayRef<mlir::Value> indices, int64_t dim);
 };
 
-struct ArithOpInfo : public OpInfo {
+struct ArithOpInfo : OpInfo {
   ArithOpInfo(mlir::Operation *operation);
   ~ArithOpInfo() override {}
   int64_t getDelay() override;
@@ -89,8 +90,6 @@ struct ILPSolver : public operations_research::MPSolver {
             operations_research::MPVariable *>
   addBoundedILPVar(double lb, double ub, int64_t step, std::string &name);
   void dump();
-  operations_research::MPVariable *addIntVar(double lb, double ub,
-                                             std::string name = "");
   ResultStatus solve() {
     auto status = this->Solve();
     this->solved = (status == ResultStatus::OPTIMAL);
@@ -98,8 +97,32 @@ struct ILPSolver : public operations_research::MPSolver {
   }
   bool isSolved() { return solved; };
 
+  [[nodiscard("Unused remainder: Generating unnecessary constraints and "
+              "vars.")]] operations_research::MPVariable *
+  getOrAddRemainder(operations_research::MPVariable *var, int64_t divisor,
+                    const std::string &name);
+
+  [[nodiscard("Unused sum: Generating unnecessary constraints and "
+              "vars.")]] operations_research::MPVariable *
+  getOrAddSum(llvm::SmallVector<operations_research::MPVariable *, 4> &vars,
+              std::string &name);
+
+  /// Result is a boolean variable (lets say b). m should be a large number.
+  /// b == 1 => lhs - rhs >= lb
+  /// b == 0 => lhs - rhs >= lb - m
+
+  operations_research::MPVariable *
+  addConditionalGTE(operations_research::MPVariable *lhs,
+                    operations_research::MPVariable *rhs, int64_t lb, double m,
+                    const std::string &name);
+
 private:
-  int64_t varID;
+  std::map<llvm::SmallVector<operations_research::MPVariable *, 4>,
+           operations_research::MPVariable *>
+      mapVarsToSum;
+  llvm::DenseMap<std::pair<operations_research::MPVariable *, int64_t>,
+                 operations_research::MPVariable *>
+      mapVarToRemainder;
 
 protected:
   llvm::raw_ostream &logger;
@@ -111,10 +134,11 @@ protected:
 /// * I_src is an array of induction vars of parent loops of the `src`
 /// operation.
 /// * II_src is an array of the corresponding loop initiation intervals.
-class MemoryDependenceILPHandler : public ILPSolver {
+class MemoryDependenceILP : public ILPSolver {
 public:
-  MemoryDependenceILPHandler(MemOpInfo &src, MemOpInfo &dest,
-                             llvm::raw_ostream &logger);
+  MemoryDependenceILP(MemOpInfo &src, MemOpInfo &dest,
+                      llvm ::DenseSet<size_t> ignoredDims,
+                      llvm::raw_ostream &logger);
 
 private:
   operations_research::MPVariable *getOrAddBoundedILPSrcVar(std::string &&name,
@@ -139,6 +163,7 @@ private:
   llvm::DenseMap<mlir::Value, std::tuple<int64_t, int64_t, int64_t,
                                          operations_research::MPVariable *>>
       mapValue2BoundedILPDestVar;
+  llvm::DenseSet<size_t> ignoredDims;
 };
 
 /// This struct manages the mapping of ILP variables required for op fusion
@@ -149,61 +174,80 @@ private:
 /// c0+c1+c2 = 1
 /// 0<= c0,c1,c2<=1
 // Memory or SSA dependence between two ops.
-struct DependenceConstraint {
-  DependenceConstraint(std::string &&name, mlir::Operation *src,
-                       mlir::Operation *dest, int64_t delay)
+struct Dependence {
+  Dependence(std::string &&name, mlir::Operation *src, mlir::Operation *dest,
+             int64_t delay)
       : name(name), src(src), dest(dest), delay(delay) {}
-  std::string name;
-  mlir::Operation *src;
-  mlir::Operation *dest;
-  int64_t delay;
+  const std::string name;
+  mlir::Operation *const src;
+  mlir::Operation *const dest;
+  const int64_t delay;
 };
 
-/// This struct holds information about which operations should be fused.
-struct ResourceConstraint {
-  ResourceConstraint(llvm::SmallVector<mlir::Operation *, 4> &operations,
-                     int64_t commonII, int64_t numResources)
-      : operations(operations), commonII(commonII), numResources(numResources) {
-    assert(operations.size() >= 2);
-  }
-
-  [[nodiscard]] bool isSchedulable() const {
-    if (commonII * numResources < (int64_t)operations.size())
-      return false;
-    return true;
-  }
-
-  [[nodiscard]] mlir::ArrayRef<mlir::Operation *>
-  getOperation(int64_t opNum) const {
-    return operations;
-  }
-  [[nodiscard]] int64_t getCommonII() const { return commonII; }
-  [[nodiscard]] int64_t getNumOps() const { return operations.size(); }
-  [[nodiscard]] int64_t getNumResources() { return numResources; }
-
-private:
-  llvm::SmallVector<mlir::Operation *, 4> operations;
-  int64_t commonII;
-  int64_t numResources;
+struct Resource {
+  virtual size_t getNumResources() = 0;
+  virtual ~Resource() {}
 };
 
-///  This class calculates the final schedule while minimizing the number of
-///  delay registers required.
+struct MemPortResource : public Resource {
+  MemPortResource(mlir::Value mem, size_t numPorts)
+      : mem(mem), numPorts(numPorts) {}
+  virtual size_t getNumResources() override { return numPorts; }
+  virtual ~MemPortResource() override {}
+
+  mlir::Value mem;
+  size_t numPorts;
+};
+
+/// This struct captures the information about two resource-conflicting
+/// operations.
+struct Conflict {
+  Conflict(mlir::Operation *op1, mlir::Operation *op2, int64_t commonII,
+           Resource *resource, int64_t depDelay)
+      : op1(op1), op2(op2), commonII(commonII), resource(resource),
+        depDelay(depDelay) {
+
+    // If its the same operation then op2 occurs after op1 in the parallel
+    // schedule as well. Thus dist =min(t_d - t_s) must be +ve.
+    // Thus depDelay=1-dist, which signifies how much we need to push the dest
+    // to ensure it occurs one cycle after source is  <= 0.
+    // i.e. even if you pull the dest behind (in case of +ve dist) by reducing
+    // the loop initiation interval(thats the only way since both the source
+    // and dest op are the same), you still can schedule the dest op one cycle
+    // after the source op.
+    assert(op1 != op2);
+  }
+
+  mlir::Operation *const op1, *const op2;
+  const int64_t commonII;
+  Resource *const resource;
+  /// The required delay if we assume that there is a true dependence from op1
+  /// to op2.
+  int64_t depDelay;
+};
+
+///  This class calculates the final schedule while minimizing the required
+///  number of delay registers.
 class Scheduler : public ILPSolver {
 public:
   Scheduler(llvm::raw_ostream &logger);
-  void addDependenceConstraint(const DependenceConstraint dep);
-  void addResourceConstraint(const ResourceConstraint resc);
-  void addDelayRegisterCost(DependenceConstraint dep, size_t width);
+  void addDependence(Dependence dep);
+  void addConflict(Conflict conflict);
+  void addDelayRegisterCost(Dependence dep, size_t width);
   int64_t getTimeOffset(mlir::Operation *);
-  int64_t getRequiredNumResources(ResourceConstraint);
-  int64_t getResourceIdx(ResourceConstraint, mlir::Operation *);
+  llvm::Optional<int64_t> getResourceAllocation(mlir::Operation *op,
+                                                Resource *resource);
 
 private:
   llvm::Optional<operations_research::MPVariable *>
   getILPVar(mlir::Operation *op);
-  operations_research::MPVariable *getOrAddTimeOffsetVar(mlir::Operation *op,
-                                                         std ::string name);
+  operations_research::MPVariable *getOrAddTimeOffset(mlir::Operation *op,
+                                                      std ::string name);
+  operations_research::MPVariable *getOrAddTotalTimeOffset(mlir::Operation *op,
+                                                           std ::string name);
+  operations_research::MPVariable *
+  getOrAddResourceAllocation(mlir::Operation *op, Resource *resource,
+                             const std ::string &name);
 
 protected:
   using ILPSolver::logger;
@@ -211,6 +255,13 @@ protected:
 private:
   size_t varNum;
   llvm::DenseMap<mlir::Operation *, operations_research::MPVariable *>
-      mapOperationToVar;
+      mapOpToVar;
+
+  // Currently only op as key should have been enough since we have only one
+  // type of resource (memory ports) which is unique for each operation. But in
+  // the future operations may be associated with multiple types of resources.
+  llvm::DenseMap<std::pair<mlir::Operation *, Resource *>,
+                 operations_research::MPVariable *>
+      mapOpAndResourceToVar;
 };
 #endif
