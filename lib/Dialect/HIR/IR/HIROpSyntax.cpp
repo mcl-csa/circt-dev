@@ -887,7 +887,7 @@ static void printArgList(OpAsmPrinter &printer, ArrayRef<BlockArgument> args,
     printer << args[i] << " : " << argTypes[i];
 
     if (helper::isBuiltinSizedType(argTypes[i])) {
-      auto delay = helper::extractDelayFromDict(argAttrs[i]);
+      auto delay = helper::getHIRDelayAttr(argAttrs[i]);
       if (delay)
         printer << " delay " << delay;
     } else if (argTypes[i].isa<hir::MemrefType>()) {
@@ -911,7 +911,7 @@ static void printArgList(OpAsmPrinter &printer, ArrayAttr argNames,
             << argTypes[i];
 
     if (helper::isBuiltinSizedType(argTypes[i])) {
-      auto delay = helper::extractDelayFromDict(argAttrs[i]);
+      auto delay = helper::getHIRDelayAttr(argAttrs[i]);
       if (delay)
         printer << " delay " << delay;
     } else if (argTypes[i].isa<hir::MemrefType>()) {

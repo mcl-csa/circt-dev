@@ -168,7 +168,7 @@ llvm::Optional<int64_t> calcLinearIndex(mlir::ArrayRef<mlir::Value> indices,
   return linearIdx;
 }
 
-llvm::Optional<int64_t> extractDelayFromDict(mlir::DictionaryAttr dict) {
+llvm::Optional<int64_t> getHIRDelayAttr(mlir::DictionaryAttr dict) {
   auto attr = dict.getNamed("hir.delay");
   if (attr.hasValue())
     if (auto delayAttr = attr.getValue().getValue())

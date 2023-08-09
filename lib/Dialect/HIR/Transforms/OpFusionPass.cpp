@@ -78,10 +78,7 @@ Optional<AccessInfo> addAccessInfoAttr(hir::CallOp op) {
   return info;
 }
 
-LogicalResult OpFusionPass::visitOp(hir::CallOp op) {
-  auto accessInfo = addAccessInfoAttr(op);
-  return success();
-}
+LogicalResult OpFusionPass::visitOp(hir::CallOp op) { return success(); }
 
 void OpFusionPass::runOnOperation() {
   hir::FuncOp funcOp = getOperation();

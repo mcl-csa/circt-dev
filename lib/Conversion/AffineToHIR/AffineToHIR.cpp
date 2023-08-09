@@ -12,6 +12,7 @@
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
+#include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Scheduling/Algorithms.h"
 #include "circt/Scheduling/Problems.h"
@@ -24,6 +25,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Support/LLVM.h"
@@ -46,7 +48,8 @@ struct AffineToHIR : public AffineToHIRBase<AffineToHIR> {
 } // namespace
 
 // Helper functions.
-SmallVector<DimKind> getDimKinds(int numDims, DictionaryAttr attr) {
+/// Used to find the dim kinds of memref.
+static SmallVector<DimKind> getDimKinds(int numDims, DictionaryAttr attr) {
   SmallVector<DimKind> out;
   if (auto dimKinds = attr.getNamed("hir.bank_dims")) {
     auto bankDims = dimKinds.getValue().getValue().dyn_cast<ArrayAttr>();
@@ -63,9 +66,9 @@ SmallVector<DimKind> getDimKinds(int numDims, DictionaryAttr attr) {
   return out;
 }
 
-Value emitI64Expr(OpBuilder &builder, ArrayRef<HIRValue> i64Values,
-                  ArrayRef<int64_t> flattenedExprCoeffs, Value destTimeVar,
-                  int64_t destOfffset) {
+static Value emitI64Expr(OpBuilder &builder, ArrayRef<HIRValue> i64Values,
+                         ArrayRef<int64_t> flattenedExprCoeffs,
+                         Value destTimeVar, int64_t destOfffset) {
 
   auto uLoc = builder.getUnknownLoc();
   int64_t const constCoeff = flattenedExprCoeffs.back();
@@ -182,7 +185,7 @@ Type getHIRType(Type ty, DictionaryAttr attr) {
   return getHIRValueType(ty);
 }
 
-DictionaryAttr getParamAttr(MLIRContext *context, ArrayAttr argAttr, int i) {
+DictionaryAttr getParamAttr(ArrayAttr argAttr, int i) {
   if (!argAttr)
     return DictionaryAttr();
   return argAttr[i].dyn_cast_or_null<DictionaryAttr>();
@@ -208,7 +211,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::FuncOp op) {
   SmallVector<Type> resultTypes;
   SmallVector<DictionaryAttr> resultAttrs;
   for (size_t i = 0; i < functionTy.getNumInputs(); i++) {
-    DictionaryAttr const attr = getParamAttr(builder.getContext(), argAttrs, i);
+    DictionaryAttr const attr = getParamAttr(argAttrs, i);
     if (!attr)
       return op->emitError(
                  "affine-to-hir pass: Can't get Dictionary attribute for "
@@ -219,7 +222,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::FuncOp op) {
     inputAttrs.push_back(attr);
   }
   for (size_t i = 0; i < functionTy.getNumResults(); i++) {
-    DictionaryAttr const attr = getParamAttr(builder.getContext(), resAttrs, i);
+    DictionaryAttr const attr = getParamAttr(resAttrs, i);
     if (!attr)
       return op->emitError("affine-to-hir pass: Can't convert attribute for "
                            "return parameter ")
@@ -509,9 +512,20 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::CallOp op) {
   Value tRegion = builder.getInsertionBlock()->getArguments().back();
   auto offset = scheduler->getTimeOffset(op);
   auto offsetAttr = builder.getI64IntegerAttr(offset);
-  auto hirOperands = valueConverter.getBlockLocalValues(
-      builder, op->getOperands(), tRegion, offset);
+  SmallVector<HIRValue, 4> hirOperands;
+  auto hirFuncTy = hirFuncExternOp.getFuncType();
+  for (size_t i = 0; i < op->getNumOperands(); i++) {
+    if (!hirFuncTy.getInputType(i).isa<IntegerType, FloatType>())
+      return op.emitError("affine-to-hir pass only supports external functions "
+                          "with integer and float arguments.");
+    auto argDelay = helper::getHIRDelayAttr(hirFuncTy.getInputAttr(i));
+    if (!argDelay)
+      return hirFuncExternOp->emitError("Could not find delay for arg ")
+             << i << ".";
 
+    hirOperands.push_back(valueConverter.getDelayedBlockLocalValue(
+        builder, op.getOperand(i), tRegion, offset + *argDelay));
+  }
   SmallVector<Value> operands;
   for (auto hirOperand : hirOperands) {
     operands.push_back(hirOperand.getValue());

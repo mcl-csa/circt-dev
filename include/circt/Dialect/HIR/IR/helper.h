@@ -41,7 +41,7 @@ mlir::DictionaryAttr getDictionaryAttr(mlir::RewriterBase &builder,
 llvm::Optional<int64_t> calcLinearIndex(mlir::ArrayRef<mlir::Value> indices,
                                         mlir::ArrayRef<int64_t> dims);
 
-llvm::Optional<int64_t> extractDelayFromDict(mlir::DictionaryAttr dict);
+llvm::Optional<int64_t> getHIRDelayAttr(mlir::DictionaryAttr dict);
 mlir::arith::ConstantOp emitConstantOp(mlir::OpBuilder &builder, int64_t value);
 llvm::Optional<mlir::ArrayAttr>
 extractMemrefPortsFromDict(mlir::DictionaryAttr dict);

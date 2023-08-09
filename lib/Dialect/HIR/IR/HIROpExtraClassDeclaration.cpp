@@ -345,7 +345,7 @@ CallOp::getResultsWithTime() {
     Type resTy = res.getType();
     if (helper::isBuiltinSizedType(resTy)) {
       DictionaryAttr attrDict = funcTy.getResultAttrs()[i];
-      uint64_t delay = helper::extractDelayFromDict(attrDict).getValue();
+      uint64_t delay = helper::getHIRDelayAttr(attrDict).getValue();
       Time time = this->getStartTime().addOffset(delay);
       output.push_back(std::make_pair(res, time));
     } else if (resTy.isa<TimeType>()) {

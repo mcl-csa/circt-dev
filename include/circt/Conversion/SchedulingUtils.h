@@ -58,6 +58,7 @@ struct MemOpInfo : OpInfo {
   mlir::Value getMemRef();
   /// Get the number of dimensions of the MemRef.
   size_t getNumMemDims();
+  mlir::AffineMap getAffineMap();
   llvm::SmallVector<mlir::Value> getIndices();
   int64_t getDelay() override;
   bool isConstant() override;
@@ -263,5 +264,6 @@ private:
   llvm::DenseMap<std::pair<mlir::Operation *, Resource *>,
                  operations_research::MPVariable *>
       mapOpAndResourceToVar;
+  operations_research::MPVariable *tmax;
 };
 #endif

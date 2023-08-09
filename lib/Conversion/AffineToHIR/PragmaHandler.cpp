@@ -1,20 +1,57 @@
 #include "PragmaHandler.h"
+#include "circt/Dialect/HIR/IR/HIR.h"
+#include "circt/Dialect/HIR/IR/helper.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/ADT/SmallVector.h"
 using namespace mlir;
+using namespace circt;
+using DimKind = MemrefPragmaHandler::DimKind;
+FuncExternPragmaHandler::FuncExternPragmaHandler(mlir::func::CallOp op) {
+  auto moduleOp = op->getParentOfType<mlir::ModuleOp>();
+  auto funcOp = dyn_cast_or_null<hir::FuncExternOp>(
+      moduleOp.lookupSymbol(op.getCallee()));
+  if (!funcOp) {
+    op.emitError("Expected callee to be hir FuncExternOp.");
+  }
+  assert(funcOp);
+  auto hirFuncTy = funcOp.getFuncType();
+  for (auto attr : hirFuncTy.getInputAttrs()) {
+    auto delay = helper::getHIRDelayAttr(attr);
+    if (delay)
+      argDelays.push_back(*delay);
+    else
+      argDelays.push_back(llvm::None);
+  }
+  for (auto attr : hirFuncTy.getResultAttrs()) {
+    auto delay = helper::getHIRDelayAttr(attr);
+    if (delay)
+      resultDelays.push_back(*delay);
+    else
+      resultDelays.push_back(llvm::None);
+  }
+}
+
+llvm::Optional<size_t> FuncExternPragmaHandler::getArgDelay(size_t i) {
+  return argDelays[i];
+}
+
+llvm::Optional<size_t> FuncExternPragmaHandler::getResultDelay(size_t i) {
+  return resultDelays[i];
+}
 
 MemrefPragmaHandler::MemrefPragmaHandler(Value memref) : ramKind(SMP) {
   assert(memref.getType().isa<mlir::MemRefType>());
 
-  std::string memKindStr;
   ArrayAttr portAttrs;
+  ArrayAttr isBankedArr;
 
   if (auto *definingOp = memref.getDefiningOp()) {
-    memKindStr = definingOp->getAttrOfType<StringAttr>("mem_kind").str();
     portAttrs = definingOp->getAttrOfType<ArrayAttr>("hir.memref.ports");
+    isBankedArr = definingOp->getAttrOfType<ArrayAttr>("hir.bank_dims");
   } else {
     auto funcOpArgs =
         dyn_cast<mlir::func::FuncOp>(memref.getParentRegion()->getParentOp())
@@ -22,9 +59,11 @@ MemrefPragmaHandler::MemrefPragmaHandler(Value memref) : ramKind(SMP) {
             .getArguments();
     for (size_t i = 0; i < funcOpArgs.size(); i++) {
       if (funcOpArgs[i] == memref) {
-        portAttrs = dyn_cast<mlir::func::FuncOp>(
-                        memref.getParentRegion()->getParentOp())
-                        .getArgAttrOfType<ArrayAttr>(i, "hir.memref.ports");
+        auto funcOp = dyn_cast<mlir::func::FuncOp>(
+            memref.getParentRegion()->getParentOp());
+        portAttrs = funcOp.getArgAttrOfType<ArrayAttr>(i, "hir.memref.ports");
+        isBankedArr = funcOp.getArgAttrOfType<ArrayAttr>(i, "hir.bank_dims");
+        break;
       }
     }
   }
@@ -67,6 +106,17 @@ MemrefPragmaHandler::MemrefPragmaHandler(Value memref) : ramKind(SMP) {
     }
     portID++;
   }
+
+  // DimKind.
+  size_t nDims = memref.getType().dyn_cast<MemRefType>().getShape().size();
+  for (size_t i = 0; i < nDims; i++) {
+    if (!isBankedArr)
+      this->dimKinds.push_back(DimKind::ADDR);
+    else if (isBankedArr[i].dyn_cast<mlir::BoolAttr>().getValue())
+      this->dimKinds.push_back(DimKind::BANK);
+    else
+      this->dimKinds.push_back(DimKind::ADDR);
+  }
 }
 
 int64_t MemrefPragmaHandler::getRdPortID(int64_t n) { return rdPorts[n]; }
@@ -77,8 +127,14 @@ MemrefPragmaHandler::PortKind MemrefPragmaHandler::getPortKind(int portNum) {
   return ports[portNum];
 }
 MemrefPragmaHandler::RAMKind MemrefPragmaHandler::getRAMKind() {
-  return ramKind;
+  assert(this->ramKind == MemrefPragmaHandler::RAMKind::SMP ||
+         this->ramKind == MemrefPragmaHandler::RAMKind::TMP);
+  return this->ramKind;
 }
+
+size_t MemrefPragmaHandler::getNumDims() { return dimKinds.size(); }
+DimKind MemrefPragmaHandler::getDimKind(size_t i) { return dimKinds[i]; }
+
 int64_t MemrefPragmaHandler::getRdLatency() {
   return this->rdLatency.getValue();
 }

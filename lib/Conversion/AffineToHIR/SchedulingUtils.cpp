@@ -107,13 +107,12 @@ bool MemOpInfo::isConstant() { return false; }
 
 bool MemOpInfo::isLoad() { return isa<AffineLoadOp>(getOperation()); }
 
-size_t MemOpInfo::getNumMemDims() {
-  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation()))
-    return loadOp.getAffineMap().getNumDims();
+size_t MemOpInfo::getNumMemDims() { return getAffineMap().getNumResults(); }
 
-  auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation());
-  assert(storeOp);
-  return storeOp.getAffineMap().getNumDims();
+mlir::AffineMap MemOpInfo::getAffineMap() {
+  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation()))
+    return loadOp.getAffineMap();
+  return dyn_cast<AffineStoreOp>(this->getOperation()).getAffineMap();
 }
 
 int64_t MemOpInfo::getConstCoeff(int64_t dim) {
@@ -128,7 +127,8 @@ int64_t MemOpInfo::getConstCoeff(int64_t dim) {
 
   // If the expression could not be flattened then treat the whole dim as zero
   // (i.e. all accesses alias on this dim).
-  if (failed(getFlattenedAffineExpr(expr, getNumMemDims(), 0, &coeffs)))
+  if (failed(getFlattenedAffineExpr(expr, getAffineMap().getNumDims(), 0,
+                                    &coeffs)))
     return 0;
 
   return coeffs.back();
@@ -158,7 +158,8 @@ int64_t MemOpInfo::getIdxCoeff(mlir::Value var, int64_t dim) {
     return 0;
 
   SmallVector<int64_t> coeffs;
-  if (failed(getFlattenedAffineExpr(expr, getNumMemDims(), 0, &coeffs)))
+  if (failed(getFlattenedAffineExpr(expr, getAffineMap().getNumDims(), 0,
+                                    &coeffs)))
     return 0;
 
   return coeffs[*varLoc];
@@ -232,7 +233,7 @@ void ILPSolver::dump() {
       logger << (long)v->lb() << "\t≤\t";
     logger << v->name();
     if (this->isSolved())
-      logger << "(" << (long)v->solution_value() << ")";
+      logger << "(" << v->solution_value() << ")";
     if (v->ub() < infinity())
       logger << "\t≤\t" << (long)v->ub();
     logger << "\n";
@@ -345,7 +346,16 @@ MemoryDependenceILP::MemoryDependenceILP(MemOpInfo &src, MemOpInfo &dest,
     : ILPSolver("MemoryDependenceILP", logger), src(src), dest(dest),
       ignoredDims(ignoredDims) {
 
-  assert(this->src.getNumMemDims() == this->dest.getNumMemDims());
+  if (this->src.getNumMemDims() != this->dest.getNumMemDims()) {
+    logger << "Number of memory dims is not equal. \nSource op("
+           << src.getNumMemDims() << "):";
+    src.getOperation()->getLoc().print(logger);
+    logger << "\n Destination op(" << dest.getNumMemDims() << "):";
+    dest.getOperation()->getLoc().print(logger);
+    logger << "\n";
+    logger.flush();
+    llvm_unreachable("Number of memory dims is not equal.");
+  }
   // Add names of the ILP vars for the loop IVs.
   for (size_t i = 0; i < src.getNumParentLoops(); i++) {
     getOrAddBoundedILPSrcVar("s" + to_string(i),
@@ -514,6 +524,8 @@ Scheduler::Scheduler(llvm::raw_ostream &logger)
     : ILPSolver("SchedulingILP", logger), varNum(0) {
 
   this->MutableObjective()->SetMinimization();
+  this->tmax = this->MakeIntVar(0, infinity(), "TMAX");
+  addCoeff(this->MutableObjective(), this->tmax, 1);
 }
 
 Optional<operations_research::MPVariable *>
@@ -542,7 +554,11 @@ Scheduler::getOrAddTotalTimeOffset(mlir::Operation *operation,
     timeOffsets.push_back(
         this->getOrAddTimeOffset(op, "t" + to_string(this->varNum++)));
   }
-  return this->getOrAddSum(timeOffsets, name);
+  auto *out = this->getOrAddSum(timeOffsets, name);
+  auto *constr = this->MakeRowConstraint(0, infinity(), "tmax-constr");
+  constr->SetCoefficient(this->tmax, 1);
+  constr->SetCoefficient(out, -1);
+  return out;
 }
 
 operations_research::MPVariable *
@@ -572,15 +588,16 @@ void Scheduler::addDependence(Dependence dep) {
 
   // Add the time offsets of the dest op and all the enclosing regions to get
   // the total dest op time offset.
-  for (auto *op : getOpAndParents(dep.dest))
-    addCoeff(constr,
-             this->getOrAddTimeOffset(op, "t" + to_string(this->varNum++)), 1);
+  addCoeff(
+      constr,
+      this->getOrAddTotalTimeOffset(dep.dest, "tt" + to_string(this->varNum++)),
+      1);
 
   // Subtract the total src op time offset.
-  for (auto *op : getOpAndParents(dep.src)) {
-    addCoeff(constr,
-             this->getOrAddTimeOffset(op, "t" + to_string(this->varNum++)), -1);
-  }
+  addCoeff(
+      constr,
+      this->getOrAddTotalTimeOffset(dep.src, "tt" + to_string(this->varNum++)),
+      -1);
 }
 
 void Scheduler::addConflict(Conflict conflict) {
@@ -628,20 +645,27 @@ void Scheduler::addConflict(Conflict conflict) {
 }
 
 void Scheduler::addDelayRegisterCost(Dependence dep, size_t width) {
-  auto srcVar = this->getILPVar(dep.src);
+  // If the src is not specified then the src is a region arg. The time offset
+  // for a region arg is 0.
+  // FIXME: This won't be true when we start allowing delays in iter_args of for
+  // loops.
+  if (dep.src) {
+    auto srcVar = this->getILPVar(dep.src);
+    assert(srcVar);
+    addCoeff(this->MutableObjective(), *srcVar, -1);
+  }
   auto destVar = this->getILPVar(dep.dest);
-  assert(srcVar);
   assert(destVar);
   addCoeff(this->MutableObjective(), *destVar, 1);
-  auto srcCoeff = this->MutableObjective()->GetCoefficient(*srcVar);
-  addCoeff(this->MutableObjective(), *srcVar, srcCoeff - 1);
 }
 
 int64_t Scheduler::getTimeOffset(mlir::Operation *op) {
   auto var = this->getILPVar(op);
+  // assert(var && "Could not find time offset.");
   if (!var) {
     op->emitError(
         "Could not find time offset for this op. Setting it as zero.");
+
     return 0;
   }
   return (*var)->solution_value();

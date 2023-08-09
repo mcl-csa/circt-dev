@@ -6,10 +6,12 @@
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Support/LogicalResult.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -21,12 +23,40 @@ using RAMKind = MemrefPragmaHandler::RAMKind;
 //-----------------------------------------------------------------------------
 // Helper functions.
 //-----------------------------------------------------------------------------
+static llvm::DenseSet<size_t> getAddrDims(Value memref) {
+  MemrefPragmaHandler pragmaHandler(memref);
+  llvm::DenseSet<size_t> out;
+  for (size_t i = 0; i < pragmaHandler.getNumDims(); i++) {
+    if (pragmaHandler.getDimKind(i) == MemrefPragmaHandler::DimKind::ADDR)
+      out.insert(i);
+  }
+
+  return out;
+}
 /// Finds the containing user (such as a ForOp) that is immediately in the
 /// lexical scope.
 static Operation *getOpContainingUserInScope(Operation *user, Region *scope) {
   while (user->getParentRegion() != scope)
     user = user->getParentOp();
   return user;
+}
+
+static Optional<size_t> getArgDelay(Operation *operation, size_t i) {
+  if (auto op = dyn_cast<func::CallOp>(operation)) {
+    return FuncExternPragmaHandler(op).getArgDelay(i);
+  }
+  return 0;
+}
+
+static Optional<size_t> getResultDelay(Operation *operation, size_t i) {
+  if (isa<arith::ArithmeticDialect>(operation->getDialect()))
+    return ArithOpInfo(operation).getDelay();
+  if (isa<AffineLoadOp, AffineStoreOp>(operation))
+    return MemOpInfo(operation, 0 /*dont care*/).getDelay();
+  if (auto op = dyn_cast<func::CallOp>(operation)) {
+    return FuncExternPragmaHandler(op).getResultDelay(i);
+  }
+  return llvm::None;
 }
 
 static LogicalResult getCommonII(Operation *op, Optional<int64_t> &commonII) {
@@ -148,7 +178,6 @@ MemPortResource *HIRScheduler::getOrAddRdPortResource(Value mem) {
   if (pragma.getRAMKind() == RAMKind::TMP)
     getOrAddPortResource(mem, mapMemref2WrPortResource, portResources,
                          pragma.getNumWrPorts());
-  assert(pragma.getRAMKind() == RAMKind::SMP);
   return getOrAddPortResource(mem, mapMemref2RdPortResource, portResources,
                               pragma.getNumRdPorts());
 }
@@ -158,10 +187,10 @@ MemPortResource *HIRScheduler::getOrAddWrPortResource(Value mem) {
   if (pragma.getRAMKind() == RAMKind::TMP)
     getOrAddPortResource(mem, mapMemref2RdPortResource, portResources,
                          pragma.getNumRdPorts());
-  assert(pragma.getRAMKind() == RAMKind::SMP);
   return getOrAddPortResource(mem, mapMemref2WrPortResource, portResources,
                               pragma.getNumWrPorts());
 }
+
 /// Inserts constraints to ensure that there are no conflicts between memory
 /// ports.
 /// FIXME: If load-load or load-store operations have same address during
@@ -178,7 +207,9 @@ LogicalResult HIRScheduler::insertPortConflict(MemOpInfo src, MemOpInfo dest) {
   logger << "\n=========================================\n";
   logger << "BankDependenceILP:";
   logger << "\n=========================================\n\n";
-  MemoryDependenceILP bankDependenceILP(src, dest, {}, logger);
+
+  auto addrDims = getAddrDims(src.getMemRef());
+  MemoryDependenceILP bankDependenceILP(src, dest, addrDims, logger);
 
   // If the solution is not found then there is no bank conflict between the
   // operations.
@@ -270,31 +301,72 @@ LogicalResult HIRScheduler::insertMemAccessConstraints() {
   return success();
 }
 
+static Optional<Dependence> getDependence(Operation *def, OpOperand &use,
+                                          size_t resultDelay) {
+  Optional<size_t> argDelay = 0;
+
+  if (def) {
+    argDelay = getArgDelay(use.getOwner(), use.getOperandNumber());
+    if (!argDelay) {
+      def->emitError("Could not find delay for arg ")
+          << use.getOperandNumber() << ".";
+      return llvm::None;
+    }
+  } else
+    // if `def` is not specified then the operand must be a region arg.
+    assert(!use.get().getDefiningOp());
+
+  auto *userOpAtThisScope =
+      getOpContainingUserInScope(use.getOwner(), use.get().getParentRegion());
+
+  Dependence dep("ssa_dep", def, userOpAtThisScope, resultDelay - *argDelay);
+  return dep;
+}
+
 LogicalResult HIRScheduler::insertSSADependencies() {
   auto walkResult = funcOp.walk([this](Operation *operation) {
-    if (operation->getNumResults() == 0)
+    if (operation->getNumResults() == 0 && operation->getNumRegions() == 0)
       return WalkResult::advance();
 
-    if (isa<arith::ConstantOp, AffineForOp, memref::AllocaOp>(operation))
+    if (isa<arith::ConstantOp, memref::AllocaOp>(operation))
       return WalkResult::advance();
 
-    int64_t delay;
-    if (isa<arith::ArithmeticDialect>(operation->getDialect()))
-      delay = ArithOpInfo(operation).getDelay();
-    else if (isa<AffineLoadOp, AffineStoreOp>(operation))
-      delay = MemOpInfo(operation, 0 /*dont care*/).getDelay();
-    else {
-      llvm_unreachable("Unknown operation.");
-    }
+    for (size_t i = 0; i < operation->getNumResults(); i++) {
+      auto resultDelay = getResultDelay(operation, i);
+      if (!resultDelay) {
+        operation->emitError("Could not find delay for result ") << i << ".";
+        return WalkResult::interrupt();
+      }
 
-    for (auto result : operation->getResults()) {
-      for (auto *user : result.getUsers()) {
-        auto *userAtThisScope =
-            getOpContainingUserInScope(user, operation->getParentRegion());
-        Dependence dep("ssa_dep", operation, userAtThisScope, delay);
-        this->addDependence(dep);
-        this->addDelayRegisterCost(dep,
+      auto result = operation->getResult(i);
+      for (auto &use : result.getUses()) {
+        auto dep = getDependence(operation, use, *resultDelay);
+        if (!dep)
+          return WalkResult::interrupt();
+        this->addDependence(*dep);
+        this->addDelayRegisterCost(*dep,
                                    result.getType().getIntOrFloatBitWidth());
+      }
+    }
+    auto regions = operation->getRegions();
+    if (regions.empty())
+      return WalkResult::advance();
+
+    // FIXME: Currently support only one-region operations.
+    assert(regions.size() == 1);
+    for (size_t i = 0; i < regions[0].getNumArguments(); i++) {
+      auto regionArg = regions[0].getArgument(i);
+      for (auto &use : regionArg.getUses()) {
+        auto dep = getDependence(NULL, use, 0);
+        if (!dep)
+          return WalkResult::interrupt();
+        // For index types (loop indices in affine dialect) the bitwidth is
+        // assumed to be 32;
+        size_t bitwidth = 32;
+        if (regionArg.getType().isIntOrFloat())
+          bitwidth = regionArg.getType().getIntOrFloatBitWidth();
+
+        this->addDelayRegisterCost(*dep, bitwidth);
       }
     }
     return WalkResult::advance();
@@ -312,9 +384,10 @@ LogicalResult HIRScheduler::init() {
   logger << "\n=========================================\n";
   logger << "Scheduling ILP:";
   logger << "\n=========================================\n\n";
-  this->dump();
   if (this->solve() != ResultStatus::OPTIMAL) {
+    this->dump();
     return funcOp->emitError("Could not find schedule.");
   }
+  this->dump();
   return success();
 }

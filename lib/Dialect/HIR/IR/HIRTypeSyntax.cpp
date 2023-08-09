@@ -75,7 +75,7 @@ static Optional<DictionaryAttr> parseArgAttr(AsmParser &parser, Type type) {
 
 void printArgAttr(AsmPrinter &printer, DictionaryAttr attr, Type type) {
   if (helper::isBuiltinSizedType(type))
-    printer << "delay " << helper::extractDelayFromDict(attr);
+    printer << "delay " << helper::getHIRDelayAttr(attr);
 
   if (type.dyn_cast<hir::MemrefType>())
     printer << "ports " << helper::extractMemrefPortsFromDict(attr);
