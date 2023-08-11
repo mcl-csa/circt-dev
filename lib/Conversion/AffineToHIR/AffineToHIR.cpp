@@ -6,9 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "circt/Conversion/AffineToHIR.h"
 #include "../PassDetail.h"
 #include "PragmaHandler.h"
+#include "circt/Conversion/AffineToHIR.h"
+#include "circt/Conversion/SchedulingAnalysis.h"
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"

@@ -10,16 +10,16 @@
 #define CIRCT_CONVERSION_AFFINETOHIR_H_
 
 #include "AffineToHIRUtils.h"
-#include "SchedulingAnalysis.h"
-#include "SchedulingUtils.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "circt/Dialect/HIR/Transforms/HIRPassImpl.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include <memory>
 #include <stack>
 
+class HIRScheduler;
 namespace mlir {
 class Pass;
 } // namespace mlir
@@ -54,7 +54,7 @@ private:
   mlir::LogicalResult visitOp(mlir::arith::ConstantOp);
   mlir::LogicalResult visitOp(mlir::memref::AllocaOp);
   mlir::LogicalResult visitOp(mlir::func::CallOp);
-  mlir::LogicalResult visitArithOp(Operation *);
+  mlir::LogicalResult visitArithOp(mlir::Operation *);
 
 private:
   mlir::OpBuilder builder;
