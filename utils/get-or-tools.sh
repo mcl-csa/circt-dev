@@ -29,7 +29,7 @@ cd or-tools-$OR_TOOLS_VER
 # To enable support for additional solvers you have licensed, see:
 #   https://github.com/google/or-tools/blob/v9.2/cmake/README.md
 cmake -S . -B build -DBUILD_DEPS=ON -DBUILD_SAMPLES=OFF -DBUILD_EXAMPLES=OFF \
-      -DBUILD_FLATZINC=OFF -DUSE_SCIP=OFF
+      -DBUILD_FLATZINC=OFF #-DUSE_SCIP=OFF
 cmake --build build --parallel $(nproc || sysctl -n hw.ncpu)
 cmake --install build --prefix $EXT_DIR
 
