@@ -46,7 +46,8 @@ static Optional<std::tuple<int, int, int>> getConstantBounds(AffineForOp op) {
   return std::make_tuple(lb, ub, step);
 }
 static Optional<std::tuple<int, int, int>> getConstantBounds(Value iv) {
-  auto op = dyn_cast<mlir::AffineForOp>(iv.getParentRegion()->getParentOp());
+  auto op =
+      dyn_cast<mlir::affine::AffineForOp>(iv.getParentRegion()->getParentOp());
   assert(op.getInductionVar() == iv);
   return getConstantBounds(op);
 }
@@ -415,8 +416,9 @@ MemoryDependenceILP::getOrAddBoundedILPDestVar(std::string &&name,
   return ilpVar;
 }
 
-std::stack<mlir::AffineForOp> MemoryDependenceILP::getCommonParentLoops() {
-  std::stack<mlir::AffineForOp> commonLoops;
+std::stack<mlir::affine::AffineForOp>
+MemoryDependenceILP::getCommonParentLoops() {
+  std::stack<mlir::affine::AffineForOp> commonLoops;
   for (size_t i = 0;
        i < std::min(src.getNumParentLoops(), dest.getNumParentLoops()); i++) {
     auto parent = src.getParentLoop(src.getNumParentLoops() - i - 1);
@@ -573,8 +575,8 @@ Scheduler::getOrAddResourceAllocation(mlir::Operation *op, Resource *resource,
   return p;
 }
 
-llvm::Optional<int64_t> Scheduler::getResourceAllocation(mlir::Operation *op,
-                                                         Resource *resource) {
+std::optional<int64_t> Scheduler::getResourceAllocation(mlir::Operation *op,
+                                                        Resource *resource) {
 
   auto key = std::make_pair(op, resource);
   if (mapOpAndResourceToVar[key] != NULL)

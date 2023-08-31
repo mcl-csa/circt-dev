@@ -47,10 +47,10 @@ private:
   mlir::LogicalResult visitOp(mlir::func::FuncOp);
   mlir::LogicalResult visitOp(circt::hir::ProbeOp);
   mlir::LogicalResult visitOp(mlir::func::ReturnOp);
-  mlir::LogicalResult visitOp(mlir::AffineForOp);
-  mlir::LogicalResult visitOp(mlir::AffineLoadOp);
-  mlir::LogicalResult visitOp(mlir::AffineStoreOp);
-  mlir::LogicalResult visitOp(mlir::AffineYieldOp);
+  mlir::LogicalResult visitOp(mlir::affine::AffineForOp);
+  mlir::LogicalResult visitOp(mlir::affine::AffineLoadOp);
+  mlir::LogicalResult visitOp(mlir::affine::AffineStoreOp);
+  mlir::LogicalResult visitOp(mlir::affine::AffineYieldOp);
   mlir::LogicalResult visitOp(mlir::arith::ConstantOp);
   mlir::LogicalResult visitOp(mlir::memref::AllocaOp);
   mlir::LogicalResult visitOp(mlir::func::CallOp);
@@ -59,7 +59,7 @@ private:
 private:
   mlir::OpBuilder builder;
   HIRScheduler *scheduler;
-  mlir::Optional<BlockArgManager> blkArgManager;
+  std::optional<BlockArgManager> blkArgManager;
   ValueConverter valueConverter;
   std::stack<OpBuilder::InsertionGuard> insertionGuards;
   llvm::DenseMap<std::pair<Value, Region *>, Value> mapValueToRegionArg;

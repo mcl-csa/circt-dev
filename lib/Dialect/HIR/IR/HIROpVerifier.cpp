@@ -9,7 +9,7 @@ using namespace hir;
 // Helper functions.
 //-----------------------------------------------------------------------------
 namespace {
-LogicalResult verifyTimeAndOffset(Value time, llvm::Optional<uint64_t> offset) {
+LogicalResult verifyTimeAndOffset(Value time, std::optional<uint64_t> offset) {
   if (time && !offset.hasValue())
     return failure();
   if (offset.hasValue() && offset.getValue() < 0)
@@ -287,8 +287,8 @@ LogicalResult FuncExternOp::verify() {
   return success();
 }
 
-llvm::Optional<std::string> typeMismatch(Location loc, hir::FuncType ta,
-                                         hir::FuncType tb) {
+std::optional<std::string> typeMismatch(Location loc, hir::FuncType ta,
+                                        hir::FuncType tb) {
 
   auto inputTypesA = ta.getInputTypes();
   auto inputTypesB = tb.getInputTypes();

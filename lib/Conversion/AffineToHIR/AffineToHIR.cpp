@@ -6,9 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Conversion/AffineToHIR.h"
 #include "../PassDetail.h"
 #include "PragmaHandler.h"
-#include "circt/Conversion/AffineToHIR.h"
 #include "circt/Conversion/SchedulingAnalysis.h"
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
@@ -310,7 +310,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::ReturnOp op) {
   return success();
 }
 
-LogicalResult AffineToHIRImpl::visitOp(mlir::AffineForOp op) {
+LogicalResult AffineToHIRImpl::visitOp(mlir::affine::AffineForOp op) {
   auto originalLb = op.getLowerBound().getMap().getSingleConstantResult();
   auto originalStep = op.getStep();
   auto lb = builder.create<circt::hw::ConstantOp>(
@@ -384,7 +384,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineForOp op) {
   return success();
 }
 
-LogicalResult AffineToHIRImpl::visitOp(mlir::AffineLoadOp op) {
+LogicalResult AffineToHIRImpl::visitOp(mlir::affine::AffineLoadOp op) {
   auto hirMem = valueConverter.getMemref(op.getMemRef());
   auto port = scheduler->getPortNumForMemoryOp(op);
   auto portAttr = builder.getI64IntegerAttr(port);
@@ -409,7 +409,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineLoadOp op) {
   return success();
 }
 
-LogicalResult AffineToHIRImpl::visitOp(mlir::AffineStoreOp op) {
+LogicalResult AffineToHIRImpl::visitOp(mlir::affine::AffineStoreOp op) {
 
   Value hirMem = valueConverter.getMemref(op.getMemRef());
 
@@ -435,7 +435,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::AffineStoreOp op) {
   return success();
 }
 
-LogicalResult AffineToHIRImpl::visitOp(mlir::AffineYieldOp op) {
+LogicalResult AffineToHIRImpl::visitOp(mlir::affine::AffineYieldOp op) {
   popInsertionBlk();
   return success();
 }
@@ -605,13 +605,13 @@ LogicalResult AffineToHIRImpl::visitOperation(Operation *operation) {
     return visitOp(op);
   if (auto op = dyn_cast<mlir::func::ReturnOp>(operation))
     return visitOp(op);
-  if (auto op = dyn_cast<mlir::AffineForOp>(operation))
+  if (auto op = dyn_cast<mlir::affine::AffineForOp>(operation))
     return visitOp(op);
-  if (auto op = dyn_cast<mlir::AffineLoadOp>(operation))
+  if (auto op = dyn_cast<mlir::affine::AffineLoadOp>(operation))
     return visitOp(op);
-  if (auto op = dyn_cast<mlir::AffineStoreOp>(operation))
+  if (auto op = dyn_cast<mlir::affine::AffineStoreOp>(operation))
     return visitOp(op);
-  if (auto op = dyn_cast<mlir::AffineYieldOp>(operation))
+  if (auto op = dyn_cast<mlir::affine::AffineYieldOp>(operation))
     return visitOp(op);
   if (auto op = dyn_cast<mlir::arith::ConstantOp>(operation))
     return visitOp(op);

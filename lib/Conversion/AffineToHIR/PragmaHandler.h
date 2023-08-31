@@ -1,16 +1,15 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "llvm/ADT/Optional.h"
 
 struct FuncExternPragmaHandler {
   FuncExternPragmaHandler(mlir::func::CallOp op);
-  llvm::Optional<size_t> getArgDelay(size_t i);
-  llvm::Optional<size_t> getResultDelay(size_t i);
+  std::optional<size_t> getArgDelay(size_t i);
+  std::optional<size_t> getResultDelay(size_t i);
 
 private:
-  mlir::SmallVector<llvm::Optional<size_t>> argDelays;
-  mlir::SmallVector<llvm::Optional<size_t>> resultDelays;
+  mlir::SmallVector<std::optional<size_t>> argDelays;
+  mlir::SmallVector<std::optional<size_t>> resultDelays;
 };
 
 struct MemrefPragmaHandler {
@@ -36,8 +35,8 @@ struct MemrefPragmaHandler {
 
 private:
   llvm::SmallVector<PortKind, 2> ports;
-  llvm::Optional<int64_t> rdLatency;
-  llvm::Optional<int64_t> wrLatency;
+  std::optional<int64_t> rdLatency;
+  std::optional<int64_t> wrLatency;
   llvm::SmallVector<int64_t, 2> rdPorts;
   llvm::SmallVector<int64_t, 2> wrPorts;
   llvm::SmallVector<DimKind> dimKinds;
@@ -46,7 +45,7 @@ private:
 
 struct AffineForPragmaHandler {
   int64_t getII();
-  AffineForPragmaHandler(mlir::AffineForOp op);
+  AffineForPragmaHandler(mlir::affine::AffineForOp op);
 
 private:
   int64_t ii;

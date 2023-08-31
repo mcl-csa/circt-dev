@@ -25,7 +25,7 @@ add_circt_dialect_library(CIRCTHIR
   Support
 
   LINK_LIBS PUBLIC
-  MLIRArithmeticDialect
+  MLIRArithDialect
   MLIRFuncDialect
   MLIRIR
   MLIRSideEffectInterfaces

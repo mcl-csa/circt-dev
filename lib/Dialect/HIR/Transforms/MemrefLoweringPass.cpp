@@ -35,13 +35,13 @@ private:
   LogicalResult visitOp(hir::MemrefExtractOp);
   MemrefPortInterface defineBusesForMemrefPort(OpBuilder &, hir::MemrefType,
                                                Attribute,
-                                               llvm::Optional<StringRef> name);
+                                               std::optional<StringRef> name);
   void initUnConnectedPorts(hir::FuncOp);
 
 private:
   MemrefInfo memrefInfo;
   SmallVector<Operation *, 10> opsToErase;
-  Optional<OpBuilder> topLevelBuilder;
+  std::optional<OpBuilder> topLevelBuilder;
   int instNum = 0;
 };
 } // end anonymous namespace
@@ -64,7 +64,7 @@ Value createLinearAddr(OpBuilder &builder, Location loc,
 
 MemrefPortInterface MemrefLoweringPass::defineBusesForMemrefPort(
     OpBuilder &builder, hir::MemrefType memrefTy, Attribute port,
-    llvm::Optional<StringRef> name) {
+    std::optional<StringRef> name) {
   MemrefPortInterface portInterface;
 
   auto *context = memrefTy.getContext();
@@ -89,9 +89,9 @@ MemrefPortInterface MemrefLoweringPass::defineBusesForMemrefPort(
         builder.getUnknownLoc(), addrTy);
     if (name) {
       helper::setNames(portInterface.addrEnableBusTensor.getDefiningOp(),
-                       {name.getValue().str() + "_addr_en"});
+                       {name.value().str() + "_addr_en"});
       helper::setNames(portInterface.addrDataBusTensor.getDefiningOp(),
-                       {name.getValue().str() + "_addr_data"});
+                       {name.value().str() + "_addr_data"});
     }
   }
 
@@ -100,12 +100,12 @@ MemrefPortInterface MemrefLoweringPass::defineBusesForMemrefPort(
         builder.getUnknownLoc(), enableTy);
     portInterface.rdDataBusTensor = topLevelBuilder->create<hir::BusTensorOp>(
         builder.getUnknownLoc(), dataTy);
-    portInterface.rdLatency = rdLatency.getValue();
+    portInterface.rdLatency = rdLatency.value();
     if (name) {
       helper::setNames(portInterface.rdEnableBusTensor.getDefiningOp(),
-                       {name.getValue().str() + "_rd_en"});
+                       {name.value().str() + "_rd_en"});
       helper::setNames(portInterface.rdDataBusTensor.getDefiningOp(),
-                       {name.getValue().str() + "_rd_data"});
+                       {name.value().str() + "_rd_data"});
     }
   }
 
@@ -116,9 +116,9 @@ MemrefPortInterface MemrefLoweringPass::defineBusesForMemrefPort(
         builder.getUnknownLoc(), dataTy);
     if (name) {
       helper::setNames(portInterface.wrEnableBusTensor.getDefiningOp(),
-                       {name.getValue().str() + "_wr_en"});
+                       {name.value().str() + "_wr_en"});
       helper::setNames(portInterface.wrDataBusTensor.getDefiningOp(),
-                       {name.getValue().str() + "_wr_data"});
+                       {name.value().str() + "_wr_data"});
     }
   }
   return portInterface;
@@ -156,7 +156,7 @@ static void initUnconnectedMemoryInterface(OpBuilder &builder,
 
 void MemrefLoweringPass::initUnConnectedPorts(hir::FuncOp op) {
   OpBuilder builder(op);
-  auto *returnOperation = &op.body().front().back();
+  auto *returnOperation = &op.getBody().front().back();
   builder.setInsertionPoint(returnOperation);
   for (auto memoryInterface : memrefInfo.getAllMemoryInterfaces()) {
     initUnconnectedMemoryInterface(builder, memoryInterface);
@@ -192,10 +192,10 @@ size_t insertBusTypesAndAttrsForMemrefPort(
                                               memrefTy.getElementType());
 
   DictionaryAttr const sendAttr = helper::getDictionaryAttr(
-      "hir.bus.ports",
+      "hir.bus.getPorts",
       ArrayAttr::get(context, StringAttr::get(context, "send")));
   DictionaryAttr const recvAttr = helper::getDictionaryAttr(
-      "hir.bus.ports",
+      "hir.bus.getPorts",
       ArrayAttr::get(context, StringAttr::get(context, "recv")));
 
   std::string const memName =
@@ -221,7 +221,7 @@ size_t insertBusTypesAndAttrsForMemrefPort(
         bb.insertArgument(loc, dataTy, builder.getUnknownLoc());
     inputAttrs.insert(inputAttrs.begin() + loc, recvAttr);
     inputNames.insert(inputNames.begin() + loc++, memName + "_rd_data");
-    portInterface.rdLatency = rdLatency.getValue();
+    portInterface.rdLatency = rdLatency.value();
   }
 
   if (helper::isMemrefWrPort(portDict)) {
@@ -242,23 +242,23 @@ void addBusAttrsPerPort(size_t i, SmallVectorImpl<DictionaryAttr> &attrs,
   auto *context = memrefTy.getContext();
   if (memrefTy.getNumElementsPerBank() > 1) {
     attrs.push_back(helper::getDictionaryAttr(
-        "hir.bus.ports",
+        "hir.bus.getPorts",
         ArrayAttr::get(context, StringAttr::get(context, "send"))));
   }
   if (helper::getMemrefPortRdLatency(port)) {
     attrs.push_back(helper::getDictionaryAttr(
-        "hir.bus.ports",
+        "hir.bus.getPorts",
         ArrayAttr::get(context, StringAttr::get(context, "send"))));
     attrs.push_back(helper::getDictionaryAttr(
-        "hir.bus.ports",
+        "hir.bus.getPorts",
         ArrayAttr::get(context, StringAttr::get(context, "recv"))));
   }
   if (helper::isMemrefWrPort(port)) {
     attrs.push_back(helper::getDictionaryAttr(
-        "hir.bus.ports",
+        "hir.bus.getPorts",
         ArrayAttr::get(context, StringAttr::get(context, "send"))));
     attrs.push_back(helper::getDictionaryAttr(
-        "hir.bus.ports",
+        "hir.bus.getPorts",
         ArrayAttr::get(context, StringAttr::get(context, "send"))));
   }
 }
@@ -288,8 +288,8 @@ void MemrefLoweringPass::insertBusArguments(hir::FuncLike op) {
           helper::extractMemrefPortsFromDict(funcTy.getInputAttrs()[i]);
       SmallVector<MemrefPortInterface> memrefPortInterfaces;
       size_t insertBefore = i;
-      for (size_t port = 0; port < ports.getValue().size(); port++) {
-        auto portDict = ports.getValue()[port].dyn_cast<DictionaryAttr>();
+      for (size_t port = 0; port < ports.value().size(); port++) {
+        auto portDict = ports.value()[port].dyn_cast<DictionaryAttr>();
         assert(portDict);
         MemrefPortInterface portInterface;
         insertBefore = insertBusTypesAndAttrsForMemrefPort(
@@ -345,12 +345,12 @@ void MemrefLoweringPass::removeMemrefArguments(hir::FuncLike op) {
 //------------------------------------------------------------------------------
 
 LogicalResult MemrefLoweringPass::visitOp(hir::LoadOp op) {
-  auto memrefTy = op.mem().getType().dyn_cast<hir::MemrefType>();
+  auto memrefTy = op.getMem().getType().dyn_cast<hir::MemrefType>();
   auto bank = helper::calcLinearIndex(op.filterIndices(BANK),
                                       memrefTy.filterShape(BANK))
-                  .getValue();
+                  .value();
   auto *memoryInterface =
-      memrefInfo.getInterface(op.mem(), op.port().getValue(), bank);
+      memrefInfo.getInterface(op.getMem(), op.getPort().value(), bank);
   if (!memoryInterface)
     return op.emitError("Could not find memory info!");
 
@@ -362,12 +362,12 @@ LogicalResult MemrefLoweringPass::visitOp(hir::LoadOp op) {
       createLinearAddr(builder, op.getLoc(), op.filterIndices(ADDR));
 
   if (memoryInterface->hasAddrBus() &&
-      failed(memoryInterface->emitAddrSendLogic(builder, op.getLoc(), addr,
-                                                op.tstart(), op.offsetAttr())))
+      failed(memoryInterface->emitAddrSendLogic(
+          builder, op.getLoc(), addr, op.getTstart(), op.getOffsetAttr())))
     return failure();
 
   auto loadValue = memoryInterface->emitRdRecvLogic(
-      builder, op.getLoc(), op.tstart(), op.offsetAttr());
+      builder, op.getLoc(), op.getTstart(), op.getOffsetAttr());
   if (!loadValue)
     return failure();
   op.replaceAllUsesWith(loadValue);
@@ -377,15 +377,15 @@ LogicalResult MemrefLoweringPass::visitOp(hir::LoadOp op) {
 
 LogicalResult MemrefLoweringPass::visitOp(hir::StoreOp op) {
 
-  auto memrefTy = op.mem().getType().dyn_cast<hir::MemrefType>();
+  auto memrefTy = op.getMem().getType().dyn_cast<hir::MemrefType>();
   auto bank = helper::calcLinearIndex(op.filterIndices(BANK),
                                       memrefTy.filterShape(BANK))
-                  .getValue();
+                  .value();
   auto *memoryInterface =
-      memrefInfo.getInterface(op.mem(), op.port().getValue(), bank);
+      memrefInfo.getInterface(op.getMem(), op.getPort().value(), bank);
   if (!memoryInterface)
     return op.emitError("Could not find memory info! ")
-           << "{port:" << op.port().getValue() << ", bank:" << bank << "}.";
+           << "{port:" << op.getPort().value() << ", bank:" << bank << "}.";
 
   mlir::OpBuilder builder(op.getContext());
   builder.setInsertionPoint(op);
@@ -395,14 +395,14 @@ LogicalResult MemrefLoweringPass::visitOp(hir::StoreOp op) {
       createLinearAddr(builder, op.getLoc(), op.filterIndices(ADDR));
 
   if (memoryInterface->hasAddrBus() &&
-      failed(memoryInterface->emitAddrSendLogic(builder, op.getLoc(), addr,
-                                                op.tstart(), op.offsetAttr())))
+      failed(memoryInterface->emitAddrSendLogic(
+          builder, op.getLoc(), addr, op.getTstart(), op.getOffsetAttr())))
     return failure();
 
   // Insert logic to send wr valid and data.
-  if (memoryInterface->hasWrBus() &&
-      failed(memoryInterface->emitWrSendLogic(builder, op.getLoc(), op.value(),
-                                              op.tstart(), op.offsetAttr())))
+  if (memoryInterface->hasWrBus() && failed(memoryInterface->emitWrSendLogic(
+                                         builder, op.getLoc(), op.getValue(),
+                                         op.getTstart(), op.getOffsetAttr())))
     return failure();
 
   opsToErase.push_back(op);
@@ -420,7 +420,7 @@ LogicalResult MemrefLoweringPass::visitOp(hir::CallOp op) {
   bool hasMemrefArg = false;
   for (size_t i = 0; i < funcTy.getInputTypes().size(); i++) {
     auto ty = funcTy.getInputTypes()[i];
-    auto operand = op.operands()[i];
+    auto operand = op.getOperands()[i];
     if (!ty.isa<hir::MemrefType>()) {
       operands.push_back(operand);
       inputTypes.push_back(funcTy.getInputTypes()[i]);
@@ -429,8 +429,8 @@ LogicalResult MemrefLoweringPass::visitOp(hir::CallOp op) {
     }
     hasMemrefArg = true;
     auto numPorts = memrefInfo.getNumPorts(operand);
-    auto ports = helper::extractMemrefPortsFromDict(funcTy.getInputAttrs()[i])
-                     .getValue();
+    auto ports =
+        helper::extractMemrefPortsFromDict(funcTy.getInputAttrs()[i]).value();
     if (ports.size() != numPorts) {
       return op->emitError("ports.size()!=numPorts.")
                  .attachNote(operand.getDefiningOp()->getLoc())
@@ -445,8 +445,9 @@ LogicalResult MemrefLoweringPass::visitOp(hir::CallOp op) {
       hir::FuncType::get(builder.getContext(), inputTypes, inputAttrs,
                          funcTy.getResultTypes(), funcTy.getResultAttrs());
   auto newCallOp = builder.create<hir::CallOp>(
-      op.getLoc(), op.getResultTypes(), op.instance_nameAttr(), op.calleeAttr(),
-      TypeAttr::get(newFuncTy), operands, op.tstart(), op.offsetAttr());
+      op.getLoc(), op.getResultTypes(), op.getInstanceNameAttr(),
+      op.getCalleeAttr(), TypeAttr::get(newFuncTy), operands, op.getTstart(),
+      op.getOffsetAttr());
   op.replaceAllUsesWith(newCallOp);
   opsToErase.push_back(op);
   return success();
@@ -468,7 +469,7 @@ LogicalResult MemrefLoweringPass::visitOp(hir::AllocaOp op) {
   SmallVector<SmallVector<MemoryInterface>> memoryInterfacesPerBankPerPort;
   for (auto bank = 0; bank < memrefTy.getNumBanks(); bank++) {
     SmallVector<MemoryInterface> memoryInterfacesPerPort;
-    for (size_t port = 0; port < op.ports().size(); port++) {
+    for (size_t port = 0; port < op.getPorts().size(); port++) {
       MemoryInterface memoryInterface(memrefTy);
       if (memrefTy.getNumElementsPerBank() > 1) {
         auto addrEnBus = emitAddrEnableBus(builder, memrefTy);
@@ -476,15 +477,15 @@ LogicalResult MemrefLoweringPass::visitOp(hir::AllocaOp op) {
         memoryInterface.setAddrEnableBus(addrEnBus);
         memoryInterface.setAddrDataBus(addrDataBus);
       }
-      if (helper::isMemrefRdPort(op.ports()[port])) {
+      if (helper::isMemrefRdPort(op.getPorts()[port])) {
         auto rdEnBus = emitRdEnableBus(builder, memrefTy);
         auto rdDataBus = emitRdDataBus(builder, memrefTy);
         memoryInterface.setRdEnableBus(rdEnBus);
         memoryInterface.setRdDataBus(
             rdDataBus,
-            helper::getMemrefPortRdLatency(op.ports()[port]).getValue());
+            helper::getMemrefPortRdLatency(op.getPorts()[port]).value());
       }
-      if (helper::isMemrefWrPort(op.ports()[port])) {
+      if (helper::isMemrefWrPort(op.getPorts()[port])) {
         auto wrEnBus = emitWrEnableBus(builder, memrefTy);
         auto wrDataBus = emitWrDataBus(builder, memrefTy);
         memoryInterface.setWrEnableBus(wrEnBus);
@@ -498,20 +499,20 @@ LogicalResult MemrefLoweringPass::visitOp(hir::AllocaOp op) {
   // Emit separate instances of hw memory for all banks, and connect the memory
   // interfaces.
   for (auto bank = 0; bank < memrefTy.getNumBanks(); bank++) {
-    auto memName = createHWMemoryName(op.mem_kind(), memrefTy, op.ports());
-    auto memVerilogName = createVerilogMemoryName(op.mem_kind(), op.ports());
+    auto memName = createHWMemoryName(op.getMemKind(), memrefTy, op.getPorts());
+    auto memVerilogName =
+        createVerilogMemoryName(op.getMemKind(), op.getPorts());
     std::string instanceName;
     auto resultName = helper::getOptionalName(op);
     if (resultName) {
-      instanceName =
-          resultName.getValue().str() + "_bank" + std::to_string(bank);
+      instanceName = resultName.value().str() + "_bank" + std::to_string(bank);
     } else {
       instanceName = memName;
     }
     instanceName = instanceName + "_inst" + std::to_string(instNum++);
     if (failed(emitMemoryInstance(builder, memrefTy,
                                   memoryInterfacesPerBankPerPort[bank],
-                                  op.mem_kind(), memVerilogName, memName,
+                                  op.getMemKind(), memVerilogName, memName,
                                   instanceName, getRegionTimeVar(op))))
       return op.emitError("Failed to emit memory instance.");
   }
@@ -530,7 +531,7 @@ LogicalResult MemrefLoweringPass::visitOp(hir::AllocaOp op) {
     }
     memoryInterfacesPerPortPerBank.push_back(memoryInterfacesPerBank);
   }
-  memrefInfo.map(op.res(), memoryInterfacesPerPortPerBank);
+  memrefInfo.map(op.getRes(), memoryInterfacesPerPortPerBank);
 
   // Remove the alloca op.
   opsToErase.push_back(op);
@@ -538,8 +539,8 @@ LogicalResult MemrefLoweringPass::visitOp(hir::AllocaOp op) {
 }
 
 LogicalResult MemrefLoweringPass::visitOp(hir::MemrefExtractOp op) {
-  // port 0 of the op.res() is mapped to op.port() of op.mem().
-  memrefInfo.mapPort(op.res(), op.mem(), op.port().getValue());
+  // port 0 of the op.res() is mapped to op.getPort() of op.getMem().
+  memrefInfo.mapPort(op.getRes(), op.getMem(), op.getPort().value());
 
   opsToErase.push_back(op);
   return success();
@@ -547,7 +548,7 @@ LogicalResult MemrefLoweringPass::visitOp(hir::MemrefExtractOp op) {
 
 LogicalResult MemrefLoweringPass::visitOp(hir::FuncOp funcOp) {
   topLevelBuilder = OpBuilder(funcOp);
-  topLevelBuilder->setInsertionPointToStart(&funcOp.body().front());
+  topLevelBuilder->setInsertionPointToStart(&funcOp.getBody().front());
   insertBusArguments(funcOp);
   WalkResult const result =
       funcOp.walk([this](Operation *operation) -> WalkResult {

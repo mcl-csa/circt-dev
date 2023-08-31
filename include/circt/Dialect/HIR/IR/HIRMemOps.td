@@ -81,7 +81,7 @@ def StoreOp : HIR_Op<"store", [DeclareOpInterfaceMethods<ScheduledOp>]> {
    }];
 }
 
-def MemrefExtractOp :HIR_Op<"memref.extract",[NoSideEffect]>{
+def MemrefExtractOp :HIR_Op<"memref.extract",[Pure]>{
    let summary = "Extract a port from a memref";
    let description = [{
       This op extracts a port from a memref.

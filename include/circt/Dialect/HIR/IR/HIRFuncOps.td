@@ -39,27 +39,27 @@ def FuncOp : HIR_Op<"func",
     private:
       // FunctionOpInterface interface.
       public:
-      mlir::FunctionType getFunctionType();
+      mlir::Type getFunctionType();
       hir::FuncType getFuncType();
       ArrayRef<Type> getArgumentTypes(); 
       ArrayRef<Type> getResultTypes() ;
       LogicalResult verifyType();
       LogicalResult verifyBody();
-      Block *getBodyBlock() { return &body().front(); }
+      Block *getBodyBlock() { return &getBody().front(); }
       public:
       //CallableOpInterface
       Region* getCallableRegion(){return &getOperation()->getRegion(0);}
       ArrayRef<Type> getCallableResults(){return getFuncType().getResultTypes();}
 
     public:
-      Region& getFuncBody(){ return body();}
+      Region& getFuncBody(){ return getBody();}
       ///Get the function arguments (excluding tstart).
       SmallVector<Value,4> getOperands();
       Value getRegionTimeVar(){
         return getFuncBody().getArguments().back();
       }
       void updateArguments(ArrayRef<DictionaryAttr>);
-      llvm::Optional<Block*> getOptionalFuncBodyBlock(){ return &getFuncBody().front();}
+      std::optional<Block*> getOptionalFuncBodyBlock(){ return &getFuncBody().front();}
   }];
   let hasVerifier = 1;
 }
@@ -73,11 +73,11 @@ def ReturnOp : HIR_Op<"return", [ParentOneOf<["FuncOp","FuncExternOp"]>, Termina
       ```mlir hir.return (%x, %y): (i32, !hir.const<i1>)```
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands);
+  let arguments = (ins Variadic<AnyType>:$hir_operands);
   let builders = [OpBuilder<(ins),[{
     build($_builder,$_state,SmallVector<Value>());
   }]>];
-  let assemblyFormat = [{ attr-dict (`(` $operands^ `)` `:` `(` type($operands) `)`)? }];
+  let assemblyFormat = [{ attr-dict (`(` $hir_operands^ `)` `:` `(` type($hir_operands) `)`)? }];
 }
 
 
@@ -119,8 +119,8 @@ let arguments = (ins
 
     public:
     //FuncLike op interface.
-      hir::FuncType getFuncType(){return funcTy().dyn_cast<hir::FuncType>();}
-      Region& getFuncBody(){ return body();}
+      hir::FuncType getFuncType(){return getFuncTy().dyn_cast<hir::FuncType>();}
+      Region& getFuncBody(){ return getBody();}
       void updateArguments(ArrayRef<DictionaryAttr>);
   }];
   //let hasVerifier = 1;
@@ -142,26 +142,25 @@ def CallOp : HIR_Op<"call",
       StrAttr:$instance_name,
       FlatSymbolRefAttr:$callee, 
       TypeAttr: $funcTy,
-      Variadic<AnyType>:$operands, 
+      Variadic<AnyType>:$hir_operands, 
       HIR_TimeType:$tstart,
       I64Attr: $offset
       );
   let results = (outs Variadic<AnyType> : $results);
 
-  let assemblyFormat = [{ $instance_name $callee `(` $operands`)` `at` custom<TimeAndOffset>($tstart ,$offset) custom<WithSSANames>(attr-dict) 
-                            `:` custom<FunctionType>($funcTy, type($operands), type($results)) }];
+  let assemblyFormat = [{ $instance_name $callee `(` $hir_operands`)` `at` custom<TimeAndOffset>($tstart ,$offset) custom<WithSSANames>(attr-dict) 
+                            `:` custom<FunctionType>($funcTy, type($hir_operands), type($results)) }];
   let hasCanonicalizeMethod = true;
   let hasVerifier = 1;
   let extraClassDeclaration=[{
     public:
       ///Get the function arguments (excluding tstart).
       SmallVector<Value,4> getOperands();
-      hir::FuncType getFuncType(){return funcTy().dyn_cast<hir::FuncType>();}
+      hir::FuncType getFuncType(){return getFuncTy().dyn_cast<hir::FuncType>();}
 
     //CallOpInterface
 
-    StringRef getCallee() { return callee(); }
-    FunctionType getCalleeType() {return getFuncType().getFunctionType();}
+    Type getCalleeType() {return getFuncType().getFunctionType();}
 
     /// Get the argument operands to the called function.
     operand_range getArgOperands() {

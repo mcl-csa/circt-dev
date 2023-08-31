@@ -37,7 +37,7 @@ def BusSendOp : HIR_Op<"bus.send", [DeclareOpInterfaceMethods<ScheduledOp>]> {
    let hasCanonicalizeMethod = true;
 }
 
-def BusRecvOp : HIR_Op<"bus.recv", [NoSideEffect,DeclareOpInterfaceMethods<ScheduledOp>]> {
+def BusRecvOp : HIR_Op<"bus.recv", [Pure,DeclareOpInterfaceMethods<ScheduledOp>]> {
    let summary = "Read from a bus.";
    let description = [{
       This Op Reads from a bus. 
@@ -70,7 +70,7 @@ def BusAssignOp: HIR_Op<"bus.assign",[]>{
          custom<CopyType>(type($src),ref(type($dest))) }];
 }
 
-def BusMapOp: HIR_Op<"bus.map",[SingleBlock,IsolatedFromAbove, NoSideEffect]>{
+def BusMapOp: HIR_Op<"bus.map",[SingleBlock,IsolatedFromAbove, Pure]>{
    let summary = "Create new buses from input buses.";
    let description = [{
       This op creates new buses from multiple input buses
@@ -142,7 +142,7 @@ def BusTensorAssignElementOp :HIR_Op<"bus_tensor.assign_element",[]>{
       type($tensor) `,` type($bus) }];
 }
 
-def BusTensorGetElementOp :HIR_Op<"bus_tensor.get_element",[NoSideEffect]>{
+def BusTensorGetElementOp :HIR_Op<"bus_tensor.get_element",[Pure]>{
    let summary = "Extract a bus from a bus tensor";
    let description = [{
       This op extracts a single bus from a tensor of buses.
@@ -157,7 +157,7 @@ def BusTensorGetElementOp :HIR_Op<"bus_tensor.get_element",[NoSideEffect]>{
       type($tensor) `->` type($res) }];
 }
 
-def BusTensorInsertElementOp: HIR_Op<"bus_tensor.insert_element",[NoSideEffect]>{
+def BusTensorInsertElementOp: HIR_Op<"bus_tensor.insert_element",[Pure]>{
    let summary = "Create a new bus_tensor by replacing an element from the input.";
    let description = [{
       This op creates a new bus_tensor from an old bus_tensor by replacing one
@@ -175,7 +175,7 @@ def BusTensorInsertElementOp: HIR_Op<"bus_tensor.insert_element",[NoSideEffect]>
    let hasVerifier = 1;
 }
 
-def BusTensorMapOp: HIR_Op<"bus_tensor.map",[SingleBlock,IsolatedFromAbove, NoSideEffect]>{
+def BusTensorMapOp: HIR_Op<"bus_tensor.map",[SingleBlock,IsolatedFromAbove, Pure]>{
    let summary = "Create new bus tensors from input bus tensors.";
    let description = [{
       This op creates new bus tensors from multiple input bus tensors
@@ -204,7 +204,7 @@ def BusTensorMapOp: HIR_Op<"bus_tensor.map",[SingleBlock,IsolatedFromAbove, NoSi
    let hasVerifier = 1;
 }
 
-def BusBroadcastOp: HIR_Op<"bus.broadcast",[NoSideEffect]>{
+def BusBroadcastOp: HIR_Op<"bus.broadcast",[Pure]>{
    let summary = "broadcast bus to tensor of buses";
    let description = [{
       This op creates a new tensor of buses from a bus by broadcasting it.

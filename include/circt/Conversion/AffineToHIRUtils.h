@@ -5,7 +5,7 @@
 using namespace mlir;
 
 struct HIRValue {
-  HIRValue() {}
+  HIRValue() = default;
   HIRValue(Value);
   HIRValue(Value value, Value timeVar, int64_t offset);
   bool isConstant() const;
@@ -35,7 +35,7 @@ private:
 /// Manages conversion of Values from affine dialect to hir dialect.
 struct ValueConverter {
   HIRValue getDelayedBlockLocalValue(OpBuilder &builder, Value mlirValue,
-                              Value timeVar, int64_t offset);
+                                     Value timeVar, int64_t offset);
   HIRValue getBlockLocalValue(OpBuilder &builder, Value mlirValue, Block *blk);
   Value getMemref(Value mlirMemRef);
   SmallVector<HIRValue, 4> getBlockLocalValues(OpBuilder &builder,
@@ -48,9 +48,9 @@ struct ValueConverter {
   void mapMemref(Value mlirMemRef, Value hirMemref);
 
 private:
-  llvm::Optional<HIRValue> getDelayedValue(OpBuilder &builder, Location errLoc,
-                                           HIRValue hirValue, Value destTimeVar,
-                                           int64_t destOffset);
+  std::optional<HIRValue> getDelayedValue(OpBuilder &builder, Location errLoc,
+                                          HIRValue hirValue, Value destTimeVar,
+                                          int64_t destOffset);
 
 private:
   llvm::DenseMap<std::pair<Block *, Value>, HIRValue>

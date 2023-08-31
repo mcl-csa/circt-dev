@@ -4,7 +4,7 @@ include "HIRDialect.td"
 include "HIRTypes.td"
 include "HIROpInterfaces.td"
 
-def ForOp : HIR_Op<"for", [SingleBlock, RecursiveSideEffects,
+def ForOp : HIR_Op<"for", [SingleBlock, RecursiveMemoryEffects,
     DeclareOpInterfaceMethods<LoopLikeOpInterface>,DeclareOpInterfaceMethods<RegionOp>,DeclareOpInterfaceMethods<ScheduledOp>]> {
        let summary = "for operation";
        let description = [{
@@ -37,14 +37,13 @@ def ForOp : HIR_Op<"for", [SingleBlock, RecursiveSideEffects,
        let extraClassDeclaration = [{
           Value getInductionVar() ;
           Value setInductionVar(Type ty) ;
-          SmallVector<Value> getIterArgs();    
+          SmallVector<Value> getIterArgArguments();    
           Value getIterTimeVar() ;
           Block* addEntryBlock(MLIRContext *context, Type inductionVarTy);
           SmallVector<Value> getCapturedValues();
           StringRef getInductionVarName();
           StringRef getIterTimeVarName();
-          Optional<int64_t> getTripCount();
-          Optional<int64_t> getInitiationInterval();
+          std::optional<int64_t> getTripCount();
           Value getIterArgOperand(unsigned int);
           void setIterArgOperand(unsigned int, Value);
        }];
@@ -53,7 +52,7 @@ def ForOp : HIR_Op<"for", [SingleBlock, RecursiveSideEffects,
        let hasVerifier = 1;
 }
 
-def WhileOp : HIR_Op<"while", [SingleBlock, RecursiveSideEffects,DeclareOpInterfaceMethods<RegionOp>,DeclareOpInterfaceMethods<ScheduledOp>]> {
+def WhileOp : HIR_Op<"while", [SingleBlock, RecursiveMemoryEffects,DeclareOpInterfaceMethods<RegionOp>,DeclareOpInterfaceMethods<ScheduledOp>]> {
    let summary = "for operation";
 
    let arguments = (ins 
@@ -67,7 +66,7 @@ def WhileOp : HIR_Op<"while", [SingleBlock, RecursiveSideEffects,DeclareOpInterf
    let hasCustomAssemblyFormat = 1;
 
    let extraClassDeclaration = [{
-      Value getIterTimeVar() { return body().getArguments().back(); }
+      Value getIterTimeVar() { return getBody().getArguments().back(); }
       SmallVector<Value> getCapturedValues();
       Block* addEntryBlock();
 
@@ -115,7 +114,7 @@ def NextIterOp : HIR_Op<"next_iter", [AttrSizedOperandSegments,
 
 }
 
-def IfOp : HIR_Op<"if", [SingleBlock, RecursiveSideEffects, DeclareOpInterfaceMethods<ScheduledOp>]> {
+def IfOp : HIR_Op<"if", [SingleBlock, RecursiveMemoryEffects, DeclareOpInterfaceMethods<ScheduledOp>]> {
    let summary = "if operation";
    let description = [{
       This op implements an if statement.
@@ -130,7 +129,7 @@ def IfOp : HIR_Op<"if", [SingleBlock, RecursiveSideEffects, DeclareOpInterfaceMe
 
    let extraClassDeclaration = [{
       Value getRegionTimeVar(){
-         return if_region().getArguments().back();
+         return getIfRegion().getArguments().back();
       }
 
    }];

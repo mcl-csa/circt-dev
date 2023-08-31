@@ -3,7 +3,7 @@ include "HIRDialect.td"
 include "HIRTypes.td"
 include "HIROpInterfaces.td"
 
-def WireOp :HIR_Op<"wire",[NoSideEffect]> {
+def WireOp :HIR_Op<"wire",[Pure]> {
    let summary = "Instantiate a new wire.";
 
    let description = [{ Instantiate a new !hir.wire 

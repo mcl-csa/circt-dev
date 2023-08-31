@@ -3,7 +3,7 @@ include "HIRDialect.td"
 include "HIRTypes.td"
 include "HIROpInterfaces.td"
 
-def DelayOp: HIR_Op<"delay",[NoSideEffect,DeclareOpInterfaceMethods<ScheduledOp>]>{
+def DelayOp: HIR_Op<"delay",[Pure,DeclareOpInterfaceMethods<ScheduledOp>]>{
   let summary = "Delay operation";
   let description = [{
     This op delays the input value by a fixed amount of time.
@@ -19,7 +19,7 @@ def DelayOp: HIR_Op<"delay",[NoSideEffect,DeclareOpInterfaceMethods<ScheduledOp>
   let hasVerifier = 1;
 }
 
-def TimeOp: HIR_Op<"time",[NoSideEffect,DeclareOpInterfaceMethods<ScheduledOp>]>{
+def TimeOp: HIR_Op<"time",[Pure,DeclareOpInterfaceMethods<ScheduledOp>]>{
   let summary = "Define a new time var";
   let description = [{
     This op defines a new time var that represents a fixed delay from another time var.
@@ -33,7 +33,7 @@ def TimeOp: HIR_Op<"time",[NoSideEffect,DeclareOpInterfaceMethods<ScheduledOp>]>
   let hasFolder = true;
 }
 
-def TimeMaxOp: HIR_Op<"time.max",[NoSideEffect]>{
+def TimeMaxOp: HIR_Op<"time.max",[Pure]>{
   let summary = "Define a new time var that is the largest of the input time vars.";
   let description = [{
     This op defines a new time var that is the larger of the input time vars.

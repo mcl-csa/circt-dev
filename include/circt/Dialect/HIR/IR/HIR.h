@@ -194,7 +194,7 @@ struct Time {
     assert(timeVar);
     return !(*this == rhs);
   }
-  llvm::Optional<bool> operator<(Time const &rhs) {
+  std::optional<bool> operator<(Time const &rhs) {
     assert(timeVar);
     return (timeVar == rhs.getTimeVar()) && (this->offset < rhs.getOffset());
   }

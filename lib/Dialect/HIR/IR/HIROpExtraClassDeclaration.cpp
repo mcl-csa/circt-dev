@@ -27,17 +27,17 @@ SmallVector<Value> filterIndices(DimKind idxKind, OperandRange indices,
 } // namespace
 SmallVector<Value> LoadOp::filterIndices(DimKind idxKind) {
 
-  OperandRange indices = this->indices();
+  OperandRange indices = this->getIndices();
   auto dimKinds =
-      this->mem().getType().dyn_cast<hir::MemrefType>().getDimKinds();
+      this->getMem().getType().dyn_cast<hir::MemrefType>().getDimKinds();
   return ::filterIndices(idxKind, indices, dimKinds);
 }
 
 SmallVector<Value> StoreOp::filterIndices(DimKind idxKind) {
 
-  OperandRange indices = this->indices();
+  OperandRange indices = this->getIndices();
   auto dimKinds =
-      this->mem().getType().dyn_cast<hir::MemrefType>().getDimKinds();
+      this->getMem().getType().dyn_cast<hir::MemrefType>().getDimKinds();
   return ::filterIndices(idxKind, indices, dimKinds);
 }
 
@@ -51,19 +51,19 @@ SmallVector<Value, 4> hir::FuncOp::getOperands() {
   return operands;
 }
 
-mlir::FunctionType hir::FuncOp::getFunctionType() {
-  return this->function_type().dyn_cast<mlir::FunctionType>();
+mlir::Type hir::FuncOp::getFunctionType() {
+  return this->getFunctionType().dyn_cast<mlir::FunctionType>();
 }
 hir::FuncType hir::FuncOp::getFuncType() {
-  return funcTy().dyn_cast<hir::FuncType>();
+  return getFuncTy().dyn_cast<hir::FuncType>();
 }
 
 ArrayRef<Type> hir::FuncOp::getArgumentTypes() {
-  return this->function_type().dyn_cast<mlir::FunctionType>().getInputs();
+  return this->getFunctionType().dyn_cast<mlir::FunctionType>().getInputs();
 }
 
 ArrayRef<Type> hir::FuncOp::getResultTypes() {
-  return this->function_type().dyn_cast<mlir::FunctionType>().getResults();
+  return this->getFunctionType().dyn_cast<mlir::FunctionType>().getResults();
 }
 
 // unsigned hir::FuncExternOp::getNumFunctionArguments() {
@@ -90,8 +90,8 @@ void hir::FuncOp::updateArguments(ArrayRef<DictionaryAttr> inputAttrs) {
                          this->getFuncType().getResultTypes(),
                          this->getFuncType().getResultAttrs());
 
-  this->function_typeAttr(TypeAttr::get(newFuncTy.getFunctionType()));
-  this->funcTyAttr(TypeAttr::get(newFuncTy));
+  this->setFunctionTypeAttr(TypeAttr::get(newFuncTy.getFunctionType()));
+  this->setFuncTyAttr(TypeAttr::get(newFuncTy));
 
   SmallVector<Attribute> functionArgAttrs;
   for (auto attr : inputAttrs)
@@ -117,12 +117,12 @@ void hir::FuncExternOp::updateArguments(ArrayRef<DictionaryAttr> inputAttrs) {
                          this->getFuncType().getResultTypes(),
                          this->getFuncType().getResultAttrs());
 
-  this->funcTyAttr(TypeAttr::get(newFuncTy));
+  this->setFuncTyAttr(TypeAttr::get(newFuncTy));
 }
 
 SmallVector<Value, 4> hir::CallOp::getOperands() {
   SmallVector<Value, 4> operands;
-  for (Value arg : this->operands().slice(0, this->getNumOperands() - 1))
+  for (Value arg : this->getHirOperands().slice(0, this->getNumOperands() - 1))
     operands.push_back(arg);
   return operands;
 }
@@ -130,7 +130,7 @@ SmallVector<Value, 4> hir::CallOp::getOperands() {
 SmallVector<Value> ForOp::getCapturedValues() {
   SmallVector<Value> capturedValues;
   mlir::visitUsedValuesDefinedAbove(
-      body(), [&capturedValues](OpOperand *operand) {
+      getBody(), [&capturedValues](OpOperand *operand) {
         if (helper::isBuiltinSizedType(operand->get().getType()))
           capturedValues.push_back(operand->get());
         return;
@@ -151,7 +151,7 @@ void ForOp::setIterArgOperand(unsigned int index, Value v) {
 Block *ForOp::addEntryBlock(MLIRContext *context, Type inductionVarTy) {
   Block *entry = new Block;
   Builder builder(this->getContext());
-  for (Value iterArg : this->iter_args())
+  for (Value iterArg : this->getIterArgs())
     entry->addArgument(iterArg.getType(), builder.getUnknownLoc());
   entry->addArgument(inductionVarTy, builder.getUnknownLoc()); // induction var
   entry->addArgument(hir::TimeType::get(context),
@@ -164,18 +164,18 @@ Block *WhileOp::addEntryBlock() {
   auto *context = this->getContext();
   Builder builder(this->getContext());
   Block *entry = new Block;
-  for (Value iterArg : this->iter_args())
+  for (Value iterArg : this->getIterArgs())
     entry->addArgument(iterArg.getType(), builder.getUnknownLoc());
   entry->addArgument(hir::TimeType::get(context),
                      builder.getUnknownLoc()); // iter time
-  body().push_back(entry);
+  getBody().push_back(entry);
   return entry;
 }
 
 SmallVector<Value> WhileOp::getCapturedValues() {
   SmallVector<Value> capturedValues;
   mlir::visitUsedValuesDefinedAbove(
-      body(), [&capturedValues](OpOperand *operand) {
+      getBody(), [&capturedValues](OpOperand *operand) {
         if (helper::isBuiltinSizedType(operand->get().getType()))
           capturedValues.push_back(operand->get());
         return;
@@ -188,28 +188,28 @@ Operation *CallOp::getCalleeDecl() {
   if (!topLevelModuleOp)
     return nullptr;
 
-  return topLevelModuleOp.lookupSymbol(callee());
+  return topLevelModuleOp.lookupSymbol(getCallee());
 }
 
 Value ForOp::getInductionVar() {
-  return getBody()->getArgument(getBody()->getNumArguments() - 2);
+  return getBody().getArgument(getBody().getNumArguments() - 2);
 }
 
 Value ForOp::setInductionVar(Type ty) {
   Builder builder(this->getContext());
-  int ivPosition = getBody()->getNumArguments() - 2;
-  getBody()->getArgument(ivPosition).setType(ty);
+  int ivPosition = getBody().getNumArguments() - 2;
+  getBody().getArgument(ivPosition).setType(ty);
   return getInductionVar();
 }
 
-SmallVector<Value> ForOp::getIterArgs() {
+SmallVector<Value> ForOp::getIterArgArguments() {
   SmallVector<Value> iterArgs;
-  for (size_t i = 0; i < getBody()->getArguments().size() - 2; i++)
-    iterArgs.push_back(getBody()->getArgument(i));
+  for (size_t i = 0; i < getBody().getArguments().size() - 2; i++)
+    iterArgs.push_back(getBody().getArgument(i));
   return iterArgs;
 }
 
-Value ForOp::getIterTimeVar() { return getBody()->getArguments().back(); }
+Value ForOp::getIterTimeVar() { return getBody().getArguments().back(); }
 StringRef ForOp::getInductionVarName() {
   return (*this)
       ->getAttr("argNames")
@@ -224,128 +224,136 @@ StringRef ForOp::getIterTimeVarName() {
       .dyn_cast<StringAttr>()
       .getValue();
 }
-Optional<int64_t> ForOp::getTripCount() {
-  auto lb = helper::getConstantIntValue(this->lb());
-  if (!lb.hasValue())
-    return llvm::None;
-  auto ub = helper::getConstantIntValue(this->ub());
-  if (!ub.hasValue())
-    return llvm::None;
+std::optional<int64_t> ForOp::getTripCount() {
+  auto lb = helper::getConstantIntValue(this->getLb());
+  if (!lb)
+    return std::nullopt;
+  auto ub = helper::getConstantIntValue(this->getUb());
+  if (!ub)
+    return std::nullopt;
   if (*ub <= *lb) {
     this->emitError("Upper bound should be greater than lower bound.")
         << "ub=" << *ub << "lb=" << *lb;
     assert(false && "ub>lb");
   }
-  auto step = helper::getConstantIntValue(this->step());
-  if (!step.hasValue())
-    return llvm::None;
+  auto step = helper::getConstantIntValue(this->getStep());
+  if (!step)
+    return std::nullopt;
   return (*ub - *lb) / (*step);
 }
 
-Optional<int64_t> ForOp::getInitiationInterval() {
-  if (!this->initiation_interval())
-    return llvm::None;
-  return this->initiation_interval().getValue();
-}
-
 // ScheduledOp interface.
-hir::Time CallOp::getStartTime() { return hir::Time(tstart(), offset()); }
+hir::Time CallOp::getStartTime() { return hir::Time(getTstart(), getOffset()); }
 
-hir::Time hir::ForOp::getStartTime() { return hir::Time(tstart(), offset()); }
-hir::Time hir::WhileOp::getStartTime() { return hir::Time(tstart(), offset()); }
+hir::Time hir::ForOp::getStartTime() {
+  return hir::Time(getTstart(), getOffset());
+}
+hir::Time hir::WhileOp::getStartTime() {
+  return hir::Time(getTstart(), getOffset());
+}
 hir::Time hir::IsFirstIterOp::getStartTime() {
-  return hir::Time(tstart(), offset());
+  return hir::Time(getTstart(), getOffset());
 }
 hir::Time hir::NextIterOp::getStartTime() {
-  return hir::Time(tstart(), offset());
+  return hir::Time(getTstart(), getOffset());
 }
-hir::Time hir::IfOp::getStartTime() { return hir::Time(tstart(), offset()); }
-hir::Time hir::DelayOp::getStartTime() { return hir::Time(tstart(), offset()); }
-hir::Time hir::TimeOp::getStartTime() { return hir::Time(timevar(), offset()); }
-hir::Time hir::LoadOp::getStartTime() { return hir::Time(tstart(), offset()); }
-hir::Time hir::StoreOp::getStartTime() { return hir::Time(tstart(), offset()); }
+hir::Time hir::IfOp::getStartTime() {
+  return hir::Time(getTstart(), getOffset());
+}
+hir::Time hir::DelayOp::getStartTime() {
+  return hir::Time(getTstart(), getOffset());
+}
+hir::Time hir::TimeOp::getStartTime() {
+  return hir::Time(getTimevar(), getOffset());
+}
+hir::Time hir::LoadOp::getStartTime() {
+  return hir::Time(getTstart(), getOffset());
+}
+hir::Time hir::StoreOp::getStartTime() {
+  return hir::Time(getTstart(), getOffset());
+}
 hir::Time hir::BusSendOp::getStartTime() {
-  return hir::Time(tstart(), offset());
+  return hir::Time(getTstart(), getOffset());
 }
 hir::Time hir::BusRecvOp::getStartTime() {
-  return hir::Time(tstart(), offset());
+  return hir::Time(getTstart(), getOffset());
 }
 
 void CallOp::setStartTime(hir::Time time) {
-  this->tstartMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
+  this->getTstartMutable().assign(time.getTimeVar());
+  this->setOffsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
+                                       time.getOffset()));
 }
 
 void ForOp::setStartTime(hir::Time time) {
-  this->tstartMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
+  this->getTstartMutable().assign(time.getTimeVar());
+  this->setOffsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
+                                       time.getOffset()));
 }
 void WhileOp::setStartTime(hir::Time time) {
-  this->tstartMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
+  this->getTstartMutable().assign(time.getTimeVar());
+  this->setOffsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
+                                       time.getOffset()));
 }
 void IsFirstIterOp::setStartTime(hir::Time time) {
-  this->tstartMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
+  this->getTstartMutable().assign(time.getTimeVar());
+  this->setOffsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
+                                       time.getOffset()));
 }
 void NextIterOp::setStartTime(hir::Time time) {
-  this->tstartMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
+  this->getTstartMutable().assign(time.getTimeVar());
+  this->setOffsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
+                                       time.getOffset()));
 }
 
 void IfOp::setStartTime(hir::Time time) {
-  this->tstartMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
+  this->getTstartMutable().assign(time.getTimeVar());
+  this->setOffsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
+                                       time.getOffset()));
 }
 
 void DelayOp::setStartTime(hir::Time time) {
-  this->tstartMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
+  this->getTstartMutable().assign(time.getTimeVar());
+  this->setOffsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
+                                       time.getOffset()));
 }
 
 void TimeOp::setStartTime(hir::Time time) {
-  this->timevarMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
+  this->getTimevarMutable().assign(time.getTimeVar());
+  this->setOffsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
+                                       time.getOffset()));
 }
 void LoadOp::setStartTime(hir::Time time) {
-  this->tstartMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
+  this->getTstartMutable().assign(time.getTimeVar());
+  this->setOffsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
+                                       time.getOffset()));
 }
 void StoreOp::setStartTime(hir::Time time) {
-  this->tstartMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
+  this->getTstartMutable().assign(time.getTimeVar());
+  this->setOffsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
+                                       time.getOffset()));
 }
 void BusSendOp::setStartTime(hir::Time time) {
-  this->tstartMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
+  this->getTstartMutable().assign(time.getTimeVar());
+  this->setOffsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
+                                       time.getOffset()));
 }
 void BusRecvOp::setStartTime(hir::Time time) {
-  this->tstartMutable().assign(time.getTimeVar());
-  this->offsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
-                                    time.getOffset()));
+  this->getTstartMutable().assign(time.getTimeVar());
+  this->setOffsetAttr(IntegerAttr::get(IntegerType::get(this->getContext(), 64),
+                                       time.getOffset()));
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+SmallVector<std::pair<Value, std::optional<hir::Time>>, 4>
 CallOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
-  auto funcTy = this->funcTy().dyn_cast<hir::FuncType>();
+  SmallVector<std::pair<Value, std::optional<hir::Time>>, 4> output;
+  auto funcTy = this->getFuncTy().dyn_cast<hir::FuncType>();
   for (size_t i = 0; i < this->getNumResults(); i++) {
     Value res = this->getResult(i);
     Type resTy = res.getType();
     if (helper::isBuiltinSizedType(resTy)) {
       DictionaryAttr attrDict = funcTy.getResultAttrs()[i];
-      uint64_t delay = helper::getHIRDelayAttr(attrDict).getValue();
+      uint64_t delay = *helper::getHIRDelayAttr(attrDict);
       Time time = this->getStartTime().addOffset(delay);
       output.push_back(std::make_pair(res, time));
     } else if (resTy.isa<TimeType>()) {
@@ -358,16 +366,16 @@ CallOp::getResultsWithTime() {
   return output;
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+SmallVector<std::pair<Value, std::optional<hir::Time>>, 4>
 ForOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
+  SmallVector<std::pair<Value, std::optional<hir::Time>>, 4> output;
   Value endTimeVar = this->getResults().back();
   auto tripCount = this->getTripCount();
   auto ii = this->getInitiationInterval();
-  Optional<hir::Time> endTime;
-  if (tripCount.hasValue() && ii.hasValue()) {
+  std::optional<hir::Time> endTime;
+  if (tripCount && ii) {
     hir::Time startTime = this->getStartTime();
-    endTime = startTime.addOffset(tripCount.getValue() * ii.getValue());
+    endTime = startTime.addOffset(tripCount.value() * ii.value());
   } else {
     endTime = Time(endTimeVar, 0);
   }
@@ -376,8 +384,8 @@ ForOp::getResultsWithTime() {
     return output;
   }
 
-  if (this->iter_arg_delays()) {
-    auto iterArgDelays = this->iter_arg_delays().getValue();
+  if (this->getIterArgDelays()) {
+    auto iterArgDelays = this->getIterArgDelays().value();
     for (size_t i = 0; i < iterArgDelays.size(); i++) {
       auto delay = iterArgDelays[i].dyn_cast<mlir::IntegerAttr>().getInt();
       auto result = this->getResult(i);
@@ -389,12 +397,12 @@ ForOp::getResultsWithTime() {
   return output;
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+SmallVector<std::pair<Value, std::optional<hir::Time>>, 4>
 WhileOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
+  SmallVector<std::pair<Value, std::optional<hir::Time>>, 4> output;
   Value endTimeVar = this->getResults().back();
-  if (this->iter_arg_delays()) {
-    auto iterArgDelays = this->iter_arg_delays().getValue();
+  if (this->getIterArgDelays()) {
+    auto iterArgDelays = this->getIterArgDelays().value();
     for (size_t i = 0; i < iterArgDelays.size(); i++) {
       auto delay = iterArgDelays[i].dyn_cast<mlir::IntegerAttr>().getInt();
       auto result = this->getResult(i);
@@ -405,29 +413,28 @@ WhileOp::getResultsWithTime() {
   return output;
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+SmallVector<std::pair<Value, std::optional<hir::Time>>, 4>
 IsFirstIterOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
+  SmallVector<std::pair<Value, std::optional<hir::Time>>, 4> output;
   output.push_back(std::make_pair(this->getResult(), this->getStartTime()));
   return output;
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+SmallVector<std::pair<Value, std::optional<hir::Time>>, 4>
 NextIterOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
+  SmallVector<std::pair<Value, std::optional<hir::Time>>, 4> output;
   return output;
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+SmallVector<std::pair<Value, std::optional<hir::Time>>, 4>
 IfOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
-  auto resultAttrs = this->result_attrs();
+  SmallVector<std::pair<Value, std::optional<hir::Time>>, 4> output;
+  auto resultAttrs = this->getResultAttrs();
   for (size_t i = 0; i < this->getNumResults(); i++) {
     Value res = this->getResult(i);
     Type resTy = res.getType();
     if (helper::isBuiltinSizedType(resTy)) {
-      uint64_t delay =
-          resultAttrs.getValue()[i].dyn_cast<IntegerAttr>().getInt();
+      uint64_t delay = resultAttrs.value()[i].dyn_cast<IntegerAttr>().getInt();
       Time time = this->getStartTime().addOffset(delay);
       output.push_back(std::make_pair(res, time));
     } else if (resTy.isa<TimeType>()) {
@@ -440,44 +447,44 @@ IfOp::getResultsWithTime() {
   return output;
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+SmallVector<std::pair<Value, std::optional<hir::Time>>, 4>
 DelayOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
+  SmallVector<std::pair<Value, std::optional<hir::Time>>, 4> output;
   output.push_back(std::make_pair(
-      this->getResult(), this->getStartTime().addOffset(this->delay())));
+      this->getResult(), this->getStartTime().addOffset(this->getDelay())));
   return output;
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+SmallVector<std::pair<Value, std::optional<hir::Time>>, 4>
 TimeOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
+  SmallVector<std::pair<Value, std::optional<hir::Time>>, 4> output;
   output.push_back(std::make_pair(this->getResult(), this->getStartTime()));
   return output;
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+SmallVector<std::pair<Value, std::optional<hir::Time>>, 4>
 LoadOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
+  SmallVector<std::pair<Value, std::optional<hir::Time>>, 4> output;
   output.push_back(std::make_pair(
-      this->getResult(), this->getStartTime().addOffset(this->delay())));
+      this->getResult(), this->getStartTime().addOffset(this->getDelay())));
   return output;
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+SmallVector<std::pair<Value, std::optional<hir::Time>>, 4>
 StoreOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
+  SmallVector<std::pair<Value, std::optional<hir::Time>>, 4> output;
   return output;
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+SmallVector<std::pair<Value, std::optional<hir::Time>>, 4>
 BusSendOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
+  SmallVector<std::pair<Value, std::optional<hir::Time>>, 4> output;
   return output;
 }
 
-SmallVector<std::pair<Value, Optional<hir::Time>>, 4>
+SmallVector<std::pair<Value, std::optional<hir::Time>>, 4>
 BusRecvOp::getResultsWithTime() {
-  SmallVector<std::pair<Value, Optional<hir::Time>>, 4> output;
+  SmallVector<std::pair<Value, std::optional<hir::Time>>, 4> output;
   output.push_back(std::make_pair(this->getResult(), this->getStartTime()));
   return output;
 }
@@ -501,11 +508,11 @@ SmallVector<Value> FuncOp::getRegionTimeVars() {
   return regionTimeVars;
 }
 
-Optional<int64_t> FuncOp::getRegionII() {
+std::optional<int64_t> FuncOp::getRegionII() {
   // FIXME: Currently we are assuming FuncOp is not pipelined.
   return INT64_MAX;
 }
 
-Optional<int64_t> ForOp::getRegionII() { return getInitiationInterval(); }
+std::optional<int64_t> ForOp::getRegionII() { return getInitiationInterval(); }
 
-Optional<int64_t> WhileOp::getRegionII() { return llvm::None; }
+std::optional<int64_t> WhileOp::getRegionII() { return std::nullopt; }

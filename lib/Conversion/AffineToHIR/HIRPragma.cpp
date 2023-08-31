@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "../PassDetail.h"
 #include "circt/Conversion/HIRPragma.h"
+#include "../PassDetail.h"
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
@@ -45,9 +45,9 @@ struct HIRPragma : public HIRPragmaBase<HIRPragma> {
 private:
   LogicalResult visitOp(mlir::func::FuncOp);
   LogicalResult visitOp(mlir::memref::AllocaOp);
-  LogicalResult visitOp(mlir::AffineForOp);
-  LogicalResult visitOp(mlir::AffineLoadOp);
-  LogicalResult visitOp(mlir::AffineStoreOp);
+  LogicalResult visitOp(mlir::affine::AffineForOp);
+  LogicalResult visitOp(mlir::affine::AffineLoadOp);
+  LogicalResult visitOp(mlir::affine::AffineStoreOp);
   LogicalResult visitOp(mlir::func::CallOp);
   LogicalResult visitOp(mlir::arith::NegFOp);
   LogicalResult visitOp(mlir::LLVM::UndefOp);
@@ -196,13 +196,15 @@ void HIRPragma::runOnOperation() {
           if (auto op = dyn_cast<mlir::memref::AllocaOp>(operation)) {
             if (failed(visitOp(op)))
               return WalkResult::interrupt();
-          } else if (auto op = dyn_cast<mlir::AffineForOp>(operation)) {
+          } else if (auto op = dyn_cast<mlir::affine::AffineForOp>(operation)) {
             if (failed(visitOp(op)))
               return WalkResult::interrupt();
-          } else if (auto op = dyn_cast<mlir::AffineLoadOp>(operation)) {
+          } else if (auto op =
+                         dyn_cast<mlir::affine::AffineLoadOp>(operation)) {
             if (failed(visitOp(op)))
               return WalkResult::interrupt();
-          } else if (auto op = dyn_cast<mlir::AffineStoreOp>(operation)) {
+          } else if (auto op =
+                         dyn_cast<mlir::affine::AffineStoreOp>(operation)) {
             if (failed(visitOp(op)))
               return WalkResult::interrupt();
           } else if (auto op = dyn_cast<mlir::func::CallOp>(operation)) {
@@ -414,16 +416,16 @@ LogicalResult HIRPragma::visitOp(mlir::memref::AllocaOp op) {
   // FIXME: This is too simple. It can not eliminate a load if another load to a
   // different address is in between. Use a map instead of one 'loadOp' variable
   // to handle that.
-  // Optional<mlir::AffineLoadOp> loadOp;
+  // Optional<mlir::affine::AffineLoadOp> loadOp;
   // for (auto *user : op.getMemref().getUsers()) {
-  //  if (auto u = dyn_cast<mlir::AffineLoadOp>(user)) {
+  //  if (auto u = dyn_cast<mlir::affine::AffineLoadOp>(user)) {
   //    if (loadOp && loadOp->getIndices() == u.getIndices()) {
   //      u->replaceAllUsesWith(*loadOp);
   //      toErase.push_back(u);
   //    } else {
   //      loadOp = u;
   //    }
-  //  } else if (auto u = dyn_cast<mlir::AffineStoreOp>(user)) {
+  //  } else if (auto u = dyn_cast<mlir::affine::AffineStoreOp>(user)) {
   //    loadOp = llvm::None;
   //  } else
   //    return user->emitError("Only affine.load and affine.store are supported
@@ -433,7 +435,7 @@ LogicalResult HIRPragma::visitOp(mlir::memref::AllocaOp op) {
   return success();
 }
 
-LogicalResult HIRPragma::visitOp(mlir::AffineForOp op) {
+LogicalResult HIRPragma::visitOp(mlir::affine::AffineForOp op) {
   auto iiAttr = op->getAttrOfType<IntegerAttr>("hls.PIPELINE_II");
   auto unrollAttr = op->getAttrOfType<IntegerAttr>("hls.UNROLL_FACTOR");
   if (iiAttr) {
@@ -456,7 +458,7 @@ LogicalResult HIRPragma::visitOp(mlir::AffineForOp op) {
   return success();
 }
 
-LogicalResult HIRPragma::visitOp(mlir::AffineLoadOp op) {
+LogicalResult HIRPragma::visitOp(mlir::affine::AffineLoadOp op) {
   Builder builder(op);
   auto memref = op.getMemref();
   ArrayAttr portsAttr = getMemrefPortAttr(memref);
@@ -473,7 +475,7 @@ LogicalResult HIRPragma::visitOp(mlir::AffineLoadOp op) {
   return success();
 }
 
-LogicalResult HIRPragma::visitOp(mlir::AffineStoreOp op) {
+LogicalResult HIRPragma::visitOp(mlir::affine::AffineStoreOp op) {
   Builder builder(op);
   auto memref = op.getMemref();
   auto wrPortNum = selectWrPort(memref);
@@ -538,7 +540,7 @@ LogicalResult HIRPragma::visitOp(mlir::arith::NegFOp op) {
 
 LogicalResult HIRPragma::visitOp(mlir::LLVM::UndefOp op) {
   for (auto *user : op.getResult().getUsers()) {
-    if (!isa<mlir::AffineStoreOp>(user))
+    if (!isa<mlir::affine::AffineStoreOp>(user))
       return user->emitError(
           "Only affine.store op uses for llvm.mlir.undef is allowed.");
     toErase.push_back(user);

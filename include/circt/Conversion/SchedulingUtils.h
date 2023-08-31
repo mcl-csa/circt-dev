@@ -3,7 +3,7 @@
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "circt/Dialect/HIR/IR/helper.h"
-//#include "include/ortools/linear_solver/linear_solver.h"
+// #include "include/ortools/linear_solver/linear_solver.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Operation.h"
@@ -38,14 +38,14 @@ struct OpInfo {
   mlir::Operation *getOperation();
   int getStaticPosition();
   size_t getNumParentLoops();
-  mlir::AffineForOp getParentLoop(int i);
+  mlir::affine::AffineForOp getParentLoop(int i);
   mlir::Value getParentLoopIV(int i);
   virtual int64_t getDelay() = 0;
   virtual bool isConstant() = 0;
   virtual ~OpInfo(){};
 
 private:
-  mlir::SmallVector<mlir::AffineForOp> parentLoops;
+  mlir::SmallVector<mlir::affine::AffineForOp> parentLoops;
   mlir::SmallVector<mlir::Value> parentLoopIVs;
   mlir::Operation *operation;
   int staticPos; // Represents the position of this op in the code. Used to
@@ -150,7 +150,7 @@ private:
   void addHappensBeforeConstraintRow();
   void addMemoryConstraints();
   void addObjective();
-  std::stack<mlir::AffineForOp> getCommonParentLoops();
+  std::stack<mlir::affine::AffineForOp> getCommonParentLoops();
 
 private:
   using ILPSolver::logger;
@@ -237,11 +237,11 @@ public:
   void addConflict(Conflict conflict);
   void addDelayRegisterCost(Dependence dep, size_t width);
   int64_t getTimeOffset(mlir::Operation *);
-  llvm::Optional<int64_t> getResourceAllocation(mlir::Operation *op,
-                                                Resource *resource);
+  std::optional<int64_t> getResourceAllocation(mlir::Operation *op,
+                                               Resource *resource);
 
 private:
-  llvm::Optional<operations_research::MPVariable *>
+  std::optional<operations_research::MPVariable *>
   getILPVar(mlir::Operation *op);
   operations_research::MPVariable *getOrAddTimeOffset(mlir::Operation *op,
                                                       std ::string name);

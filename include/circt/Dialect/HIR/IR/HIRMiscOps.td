@@ -13,7 +13,7 @@ def CommentOp : HIR_Op<"comment", []> {
    let assemblyFormat = [{$comment attr-dict}];
 }
 
-def CastOp: HIR_Op<"cast",[NoSideEffect]>{
+def CastOp: HIR_Op<"cast",[Pure]>{
    let summary = "Cast between compatible types.";
    let description = [{
 Examples:
@@ -28,7 +28,7 @@ Examples:
    let hasVerifier = 1;
 }
 
-def GetClockOp: HIR_Op<"get_clk",[NoSideEffect]>{
+def GetClockOp: HIR_Op<"get_clk",[Pure]>{
    let summary = "Get the clock corresponding to a time variable.";
    let description = [{
 Example:
@@ -41,7 +41,7 @@ Example:
    let assemblyFormat = [{ $input custom<WithSSANames>(attr-dict) `:` type($res)}];
 }
 
-def GetResetOp: HIR_Op<"get_reset",[NoSideEffect]>{
+def GetResetOp: HIR_Op<"get_reset",[Pure]>{
    let summary = "Get the reset signal corresponding to a time variable.";
    let description = [{
 Example:

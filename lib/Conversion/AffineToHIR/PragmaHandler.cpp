@@ -35,11 +35,11 @@ FuncExternPragmaHandler::FuncExternPragmaHandler(mlir::func::CallOp op) {
   }
 }
 
-llvm::Optional<size_t> FuncExternPragmaHandler::getArgDelay(size_t i) {
+std::optional<size_t> FuncExternPragmaHandler::getArgDelay(size_t i) {
   return argDelays[i];
 }
 
-llvm::Optional<size_t> FuncExternPragmaHandler::getResultDelay(size_t i) {
+std::optional<size_t> FuncExternPragmaHandler::getResultDelay(size_t i) {
   return resultDelays[i];
 }
 
@@ -146,6 +146,6 @@ int64_t AffineForPragmaHandler::getII() {
   assert(ii > 0);
   return ii;
 }
-AffineForPragmaHandler::AffineForPragmaHandler(mlir::AffineForOp op) {
+AffineForPragmaHandler::AffineForPragmaHandler(mlir::affine::AffineForOp op) {
   this->ii = op->getAttrOfType<IntegerAttr>("II").getInt();
 }

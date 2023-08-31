@@ -16,7 +16,7 @@ let cppNamespace = "circt::hir";
       >,
     InterfaceMethod<
       "Get the region II for this operation. II= INT64_MAX implies that there is no pipelining.",
-      "Optional<int64_t>", "getRegionII"    
+      "std::optional<int64_t>", "getRegionII"    
       >,
   ];
 }
@@ -34,7 +34,7 @@ let cppNamespace = "circt::hir";
       >,
     InterfaceMethod<
       "Get all results with time.",
-      "llvm::SmallVector<std::pair<Value,mlir::Optional<hir::Time>>,4>", "getResultsWithTime"    
+      "llvm::SmallVector<std::pair<Value,std::optional<hir::Time>>,4>", "getResultsWithTime"    
       >,
     InterfaceMethod<
       "Set new start time.",
@@ -68,7 +68,7 @@ let cppNamespace = "circt::hir";
     >,
     InterfaceMethod<
       "Get input args names.",
-      "llvm::Optional<ArrayAttr>", "resultNames"
+      "std::optional<ArrayAttr>", "resultNames"
     >,
   ];
 }

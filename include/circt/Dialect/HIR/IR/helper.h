@@ -13,12 +13,12 @@ namespace helper {
 // Templates.
 
 // Declarations.
-llvm::Optional<int64_t> getBitWidth(mlir::Type);
+std::optional<int64_t> getBitWidth(mlir::Type);
 unsigned clog2(int);
 
 bool isBuiltinSizedType(mlir::Type);
 bool isBusLikeType(mlir::Type);
-llvm::Optional<int64_t> getConstantIntValue(mlir::Value var);
+std::optional<int64_t> getConstantIntValue(mlir::Value var);
 mlir::LogicalResult isConstantIntValue(mlir::Value var);
 mlir::IntegerAttr getI64IntegerAttr(mlir::MLIRContext *context, int value);
 
@@ -38,16 +38,16 @@ mlir::DictionaryAttr getDictionaryAttr(mlir::RewriterBase &builder,
                                        mlir::StringRef name,
                                        mlir::Attribute attr);
 
-llvm::Optional<int64_t> calcLinearIndex(mlir::ArrayRef<mlir::Value> indices,
-                                        mlir::ArrayRef<int64_t> dims);
+std::optional<int64_t> calcLinearIndex(mlir::ArrayRef<mlir::Value> indices,
+                                       mlir::ArrayRef<int64_t> dims);
 
-llvm::Optional<int64_t> getHIRDelayAttr(mlir::DictionaryAttr dict);
+std::optional<int64_t> getHIRDelayAttr(mlir::DictionaryAttr dict);
 mlir::arith::ConstantOp emitConstantOp(mlir::OpBuilder &builder, int64_t value);
-llvm::Optional<mlir::ArrayAttr>
+std::optional<mlir::ArrayAttr>
 extractMemrefPortsFromDict(mlir::DictionaryAttr dict);
 mlir::ArrayAttr getPortAttrForReg(mlir::Builder &builder);
-llvm::Optional<int64_t> getMemrefPortRdLatency(mlir::Attribute port);
-llvm::Optional<int64_t> getMemrefPortWrLatency(mlir::Attribute port);
+std::optional<int64_t> getMemrefPortRdLatency(mlir::Attribute port);
+std::optional<int64_t> getMemrefPortWrLatency(mlir::Attribute port);
 bool isMemrefWrPort(mlir::Attribute port);
 bool isMemrefRdPort(mlir::Attribute port);
 llvm::StringRef extractBusPortFromDict(mlir::DictionaryAttr dict);
@@ -58,10 +58,10 @@ mlir::Value lookupOrOriginal(mlir::BlockAndValueMapping &mapper,
 void setNames(mlir::Operation *, mlir::ArrayRef<mlir::StringRef>);
 
 mlir::SmallVector<mlir::Type> getTypes(mlir::ArrayRef<mlir::Value>);
-llvm::Optional<mlir::StringRef> getOptionalName(mlir::Operation *operation,
-                                                int64_t resultNum);
-llvm::Optional<mlir::StringRef> getOptionalName(mlir::Value v);
-llvm::Optional<circt::Type> getElementType(circt::Type);
+std::optional<mlir::StringRef> getOptionalName(mlir::Operation *operation,
+                                               int64_t resultNum);
+std::optional<mlir::StringRef> getOptionalName(mlir::Value v);
+std::optional<circt::Type> getElementType(circt::Type);
 circt::Operation *
 declareExternalFuncForCall(circt::hir::CallOp callOp,
                            llvm::StringRef verilogName,
@@ -69,7 +69,7 @@ declareExternalFuncForCall(circt::hir::CallOp callOp,
                            circt::SmallVector<std::string> resultNames = {});
 mlir::Value materializeIntegerConstant(mlir::OpBuilder &builder, int value,
                                        int64_t width);
-llvm::Optional<mlir::Type> convertToHWType(mlir::Type type);
+std::optional<mlir::Type> convertToHWType(mlir::Type type);
 
 mlir::Value insertBusSelectLogic(mlir::OpBuilder &builder,
                                  mlir::Value selectBus, mlir::Value trueBus,
@@ -83,6 +83,6 @@ mlir::Value emitRegisterAlloca(mlir::OpBuilder &builder, mlir::Type elementTy);
 mlir::LogicalResult
 validatePositiveConstant(mlir::ArrayRef<mlir::Value> indices);
 mlir::Value emitIntegerBusOp(mlir::OpBuilder &builder, int64_t width);
-llvm::Optional<int64_t> getOptionalTimeOffset(mlir::Operation *);
+std::optional<int64_t> getOptionalTimeOffset(mlir::Operation *);
 } // namespace helper
 #endif
