@@ -1,7 +1,7 @@
 #ifndef HIR_TYPES
 #define HIR_TYPES
 include "mlir/IR/AttrTypeBase.td"
-include "HIRDialect.td"
+include "circt/Dialect/HIR/IR/HIRDialect.td"
 
 class HIRDialect_Type<string name, string typeMnemonic, list<Trait> traits = []>
     : TypeDef<HIR_Dialect, name, traits> {

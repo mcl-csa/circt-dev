@@ -1,5 +1,4 @@
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "HIRDialect.td"
 
 def CommentOp : HIR_Op<"comment", []> {
    let summary = "comment";

@@ -2,10 +2,6 @@ include "mlir/IR/SymbolInterfaces.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 
-include "HIRDialect.td"
-include "HIROpInterfaces.td"
-include "HIRTypes.td"
-
 def FuncOp : HIR_Op<"func", 
   [Symbol, SingleBlockImplicitTerminator<"ReturnOp">, FunctionOpInterface, FuncLike,
   IsolatedFromAbove, CallableOpInterface, HasParent<"mlir::ModuleOp">,DeclareOpInterfaceMethods<RegionOp>]> {

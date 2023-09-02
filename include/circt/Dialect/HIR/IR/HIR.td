@@ -7,17 +7,18 @@ include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 
-include "HIRTypes.td"
-include "HIRAttrs.td"
-include "HIROpInterfaces.td"
+include "circt/Dialect/HIR/IR/HIRDialect.td"
+include "circt/Dialect/HIR/IR/HIRTypes.td"
+include "circt/Dialect/HIR/IR/HIRAttrs.td"
+include "circt/Dialect/HIR/IR/HIROpInterfaces.td"
 
 //Ops
-include "HIRFuncOps.td"
-include "HIRCtrlFlowOps.td"
-include "HIRMemOps.td"
-include "HIRTimeOps.td"
-include "HIRMiscOps.td"
-include "HIRBusOps.td"
-include "HIRWireOps.td"
+include "circt/Dialect/HIR/IR/HIRFuncOps.td"
+include "circt/Dialect/HIR/IR/HIRCtrlFlowOps.td"
+include "circt/Dialect/HIR/IR/HIRMemOps.td"
+include "circt/Dialect/HIR/IR/HIRTimeOps.td"
+include "circt/Dialect/HIR/IR/HIRMiscOps.td"
+include "circt/Dialect/HIR/IR/HIRBusOps.td"
+include "circt/Dialect/HIR/IR/HIRWireOps.td"
 
 #endif // HIR_TD

@@ -1,7 +1,4 @@
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "HIRDialect.td"
-include "HIRTypes.td"
-include "HIROpInterfaces.td"
 
 def WireOp :HIR_Op<"wire",[NoSideEffect]> {
    let summary = "Instantiate a new wire.";
