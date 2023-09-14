@@ -9,6 +9,7 @@ llvm_update_compile_flags(hirtool)
 target_link_libraries(hirtool
   PRIVATE
   CIRCTAffineToHIR
+  CIRCTHIRCosim
   CIRCTAnalysisTestPasses
   CIRCTExportVerilog
   CIRCTHIR
