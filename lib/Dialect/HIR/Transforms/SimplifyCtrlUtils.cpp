@@ -4,13 +4,23 @@
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/SV/SVOps.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include <string>
 
 using namespace circt;
 using namespace hir;
+struct HWPort {
+  StringAttr name;
+  hw::PortInfo::Direction direction;
+  Type type;
+  size_t argNum;
+};
 
-Value emitReg(OpBuilder &builder, Type elementTy, Value input, Value tstart) {
+hw::PortInfo getPortInfo(HWPort port) {
+  return hw::PortInfo({{port.name, port.type, port.direction}, port.argNum});
+}
+
+Value emitReg(OpBuilder &builder, Type elementTy, Value Input, Value tstart) {
   auto uLoc = builder.getUnknownLoc();
   auto c0 =
       builder.create<mlir::arith::ConstantOp>(uLoc, builder.getIndexAttr(0));
@@ -18,7 +28,7 @@ Value emitReg(OpBuilder &builder, Type elementTy, Value input, Value tstart) {
   auto zeroAttr = builder.getI64IntegerAttr(0);
   auto oneAttr = builder.getI64IntegerAttr(1);
 
-  builder.create<hir::StoreOp>(uLoc, input, ivReg, ArrayRef<Value>({c0}),
+  builder.create<hir::StoreOp>(uLoc, Input, ivReg, ArrayRef<Value>({c0}),
                                oneAttr, oneAttr, tstart, zeroAttr);
   return builder.create<hir::LoadOp>(uLoc, elementTy, ivReg,
                                      ArrayRef<Value>({c0}), zeroAttr, zeroAttr,
@@ -34,42 +44,42 @@ hw::HWModuleOp emitForOPStateMachineModule(OpBuilder &builder, Type ivTy) {
   OpBuilder::InsertionGuard guard(builder);
   auto uLoc = builder.getUnknownLoc();
   llvm::SmallVector<hw::PortInfo, 4> modPorts;
-  modPorts.push_back({.name = builder.getStringAttr("lb"),
-                      .direction = hw::PortDirection::INPUT,
-                      .type = ivTy,
-                      .argNum = 0});
-  modPorts.push_back({.name = builder.getStringAttr("ub"),
-                      .direction = hw::PortDirection::INPUT,
-                      .type = ivTy,
-                      .argNum = 1});
-  modPorts.push_back({.name = builder.getStringAttr("step"),
-                      .direction = hw::PortDirection::INPUT,
-                      .type = ivTy,
-                      .argNum = 2});
-  modPorts.push_back({.name = builder.getStringAttr("start"),
-                      .direction = hw::PortDirection::INPUT,
-                      .type = builder.getI1Type(),
-                      .argNum = 3});
-  modPorts.push_back({.name = builder.getStringAttr("next"),
-                      .direction = hw::PortDirection::INPUT,
-                      .type = builder.getI1Type(),
-                      .argNum = 4});
-  modPorts.push_back({.name = builder.getStringAttr("clk"),
-                      .direction = hw::PortDirection::INPUT,
-                      .type = builder.getI1Type(),
-                      .argNum = 5});
-  modPorts.push_back({.name = builder.getStringAttr("rst"),
-                      .direction = hw::PortDirection::INPUT,
-                      .type = builder.getI1Type(),
-                      .argNum = 6});
-  modPorts.push_back({.name = builder.getStringAttr("iv"),
-                      .direction = hw::PortDirection::OUTPUT,
-                      .type = ivTy,
-                      .argNum = 0});
-  modPorts.push_back({.name = builder.getStringAttr("done"),
-                      .direction = hw::PortDirection::OUTPUT,
-                      .type = builder.getI1Type(),
-                      .argNum = 1});
+  modPorts.push_back(getPortInfo({.name = builder.getStringAttr("lb"),
+                                  .direction = hw::PortInfo::Direction::Input,
+                                  .type = ivTy,
+                                  .argNum = 0}));
+  modPorts.push_back(getPortInfo({.name = builder.getStringAttr("ub"),
+                                  .direction = hw::PortInfo::Direction::Input,
+                                  .type = ivTy,
+                                  .argNum = 1}));
+  modPorts.push_back(getPortInfo({.name = builder.getStringAttr("step"),
+                                  .direction = hw::PortInfo::Direction::Input,
+                                  .type = ivTy,
+                                  .argNum = 2}));
+  modPorts.push_back(getPortInfo({.name = builder.getStringAttr("start"),
+                                  .direction = hw::PortInfo::Direction::Input,
+                                  .type = builder.getI1Type(),
+                                  .argNum = 3}));
+  modPorts.push_back(getPortInfo({.name = builder.getStringAttr("next"),
+                                  .direction = hw::PortInfo::Direction::Input,
+                                  .type = builder.getI1Type(),
+                                  .argNum = 4}));
+  modPorts.push_back(getPortInfo({.name = builder.getStringAttr("clk"),
+                                  .direction = hw::PortInfo::Direction::Input,
+                                  .type = builder.getI1Type(),
+                                  .argNum = 5}));
+  modPorts.push_back(getPortInfo({.name = builder.getStringAttr("rst"),
+                                  .direction = hw::PortInfo::Direction::Input,
+                                  .type = builder.getI1Type(),
+                                  .argNum = 6}));
+  modPorts.push_back(getPortInfo({.name = builder.getStringAttr("iv"),
+                                  .direction = hw::PortInfo::Direction::Output,
+                                  .type = ivTy,
+                                  .argNum = 0}));
+  modPorts.push_back(getPortInfo({.name = builder.getStringAttr("done"),
+                                  .direction = hw::PortInfo::Direction::Output,
+                                  .type = builder.getI1Type(),
+                                  .argNum = 1}));
   builder.setInsertionPointToStart(&builder.getBlock()
                                         ->getParentOp()
                                         ->getParentOfType<mlir::ModuleOp>()
@@ -81,13 +91,13 @@ hw::HWModuleOp emitForOPStateMachineModule(OpBuilder &builder, Type ivTy) {
       uLoc, builder.getStringAttr("ForOp_state_machine" + std::to_string(n++)),
       modPorts);
 
-  auto lb = moduleOp.getArgument(0);
-  auto ub = moduleOp.getArgument(1);
-  auto step = moduleOp.getArgument(2);
-  auto start = moduleOp.getArgument(3);
-  auto next = moduleOp.getArgument(4);
-  auto clk = moduleOp.getArgument(5);
-  auto reset = moduleOp.getArgument(6);
+  auto lb = moduleOp.getArgumentForInput(0);
+  auto ub = moduleOp.getArgumentForInput(1);
+  auto step = moduleOp.getArgumentForInput(2);
+  auto start = moduleOp.getArgumentForInput(3);
+  auto next = moduleOp.getArgumentForInput(4);
+  auto clk = moduleOp.getArgumentForInput(5);
+  auto reset = moduleOp.getArgumentForInput(6);
 
   builder.setInsertionPointToStart(moduleOp.getBodyBlock());
   auto zeroBit = helper::materializeIntegerConstant(builder, 0, 1);
@@ -174,7 +184,6 @@ std::pair<Value, Value> insertForOpStateMachine(OpBuilder &builder,
                    .getResult();
   auto sm = builder.create<hw::InstanceOp>(
       builder.getUnknownLoc(), module, "ForOP_SM" + std::to_string(n++),
-      llvm::SmallVector({lb, ub, step, isFirstIter, next, clk, reset}),
-      ArrayAttr(), StringAttr());
+      llvm::SmallVector<Value>({lb, ub, step, isFirstIter, next, clk, reset}));
   return std::make_pair(sm.getResult(1), sm.getResult(0));
 }

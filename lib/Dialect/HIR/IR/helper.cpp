@@ -4,13 +4,14 @@
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Support/LLVM.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/PatternMatch.h"
+#include <mlir/IR/IRMapping.h>
 #include <stack>
 #include <string>
 
@@ -35,16 +36,16 @@ std::optional<int64_t> getBitWidth(Type type) {
 
   if (auto tensorTy = type.dyn_cast<mlir::TensorType>())
     return tensorTy.getNumElements() *
-           getBitWidth(tensorTy.getElementType()).getValue();
+           getBitWidth(tensorTy.getElementType()).value();
 
   if (auto busTy = type.dyn_cast<hir::BusType>())
     return getBitWidth(busTy.getElementType());
 
   if (auto busTensorTy = type.dyn_cast<hir::BusTensorType>())
     return busTensorTy.getNumElements() *
-           getBitWidth(busTensorTy.getElementType()).getValue();
+           getBitWidth(busTensorTy.getElementType()).value();
 
-  return llvm::None;
+  return std::nullopt;
 }
 
 unsigned clog2(int value) { return (int)(ceil(log2(((double)value)))); }
@@ -59,7 +60,7 @@ DictionaryAttr getDictionaryAttr(MLIRContext *context) {
 
 DictionaryAttr getDictionaryAttr(StringRef name, Attribute attr) {
   mlir::Builder builder(attr.getContext());
-  assert(name != "");
+  assert(!name.empty());
   return DictionaryAttr::get(builder.getContext(),
                              builder.getNamedAttr(name, attr));
 }
@@ -135,7 +136,7 @@ std::optional<int64_t> getConstantIntValue(Value var) {
   if (hwConstantOp) {
     return hwConstantOp.getValue().getSExtValue();
   }
-  return llvm::None;
+  return std::nullopt;
 }
 
 mlir::LogicalResult isConstantIntValue(mlir::Value var) {
@@ -150,14 +151,14 @@ std::optional<int64_t> calcLinearIndex(mlir::ArrayRef<mlir::Value> indices,
   int64_t linearIdx = 0;
   int64_t stride = 1;
   // This can happen if there are no BANK(ADDR) indices.
-  if (indices.size() == 0)
+  if (indices.empty())
     return 0;
 
   for (int i = indices.size() - 1; i >= 0; i--) {
     auto idxConst = getConstantIntValue(indices[i]);
     if (!idxConst)
-      return llvm::None;
-    linearIdx += idxConst.getValue() * stride;
+      return std::nullopt;
+    linearIdx += idxConst.value() * stride;
     assert(linearIdx <= 1000000);
     stride *= dims[i];
   }
@@ -170,11 +171,11 @@ std::optional<int64_t> calcLinearIndex(mlir::ArrayRef<mlir::Value> indices,
 
 std::optional<int64_t> getHIRDelayAttr(mlir::DictionaryAttr dict) {
   auto attr = dict.getNamed("hir.delay");
-  if (attr.hasValue())
-    if (auto delayAttr = attr.getValue().getValue())
+  if (attr)
+    if (auto delayAttr = attr.value().getValue())
       if (auto intAttr = delayAttr.dyn_cast<IntegerAttr>())
         return intAttr.getInt();
-  return llvm::None;
+  return std::nullopt;
 }
 mlir::arith::ConstantOp emitConstantOp(mlir::OpBuilder &builder,
                                        int64_t value) {
@@ -183,10 +184,10 @@ mlir::arith::ConstantOp emitConstantOp(mlir::OpBuilder &builder,
 }
 
 std::optional<ArrayAttr> extractMemrefPortsFromDict(mlir::DictionaryAttr dict) {
-  if (!dict.getNamed("hir.memref.ports").hasValue())
-    return llvm::None;
+  if (!dict.getNamed("hir.memref.ports"))
+    return std::nullopt;
   return dict.getNamed("hir.memref.ports")
-      .getValue()
+      .value()
       .getValue()
       .dyn_cast<ArrayAttr>();
 }
@@ -203,42 +204,36 @@ std::optional<int64_t> getMemrefPortRdLatency(Attribute port) {
   auto portDict = port.dyn_cast<DictionaryAttr>();
   auto rdLatencyAttr = portDict.getNamed("rd_latency");
   if (rdLatencyAttr)
-    return rdLatencyAttr.getValue().getValue().dyn_cast<IntegerAttr>().getInt();
-  return llvm::None;
+    return rdLatencyAttr.value().getValue().dyn_cast<IntegerAttr>().getInt();
+  return std::nullopt;
 }
 
 std::optional<int64_t> getMemrefPortWrLatency(Attribute port) {
   auto portDict = port.dyn_cast<DictionaryAttr>();
   auto wrLatencyAttr = portDict.getNamed("wr_latency");
   if (wrLatencyAttr)
-    return wrLatencyAttr.getValue().getValue().dyn_cast<IntegerAttr>().getInt();
-  return llvm::None;
+    return wrLatencyAttr.value().getValue().dyn_cast<IntegerAttr>().getInt();
+  return std::nullopt;
 }
 
 bool isMemrefWrPort(Attribute port) {
   auto portDict = port.dyn_cast<DictionaryAttr>();
   auto wrLatencyAttr = portDict.getAs<IntegerAttr>("wr_latency");
-  if (wrLatencyAttr)
-    return true;
-  return false;
+  return static_cast<bool>(wrLatencyAttr);
 }
 
 bool isMemrefRdPort(Attribute port) {
   auto portDict = port.dyn_cast<DictionaryAttr>();
   auto rdLatencyAttr = portDict.getAs<IntegerAttr>("rd_latency");
-  if (rdLatencyAttr)
-    return true;
-  return false;
+  return static_cast<bool>(rdLatencyAttr);
 }
 
 StringRef extractBusPortFromDict(mlir::DictionaryAttr dict) {
-  auto ports = dict.getNamed("hir.bus.ports")
-                   .getValue()
-                   .getValue()
-                   .dyn_cast<ArrayAttr>();
+  auto ports =
+      dict.getNamed("hir.bus.ports").value().getValue().dyn_cast<ArrayAttr>();
   // Bus port should be either send or recv.
   assert(ports.size() == 1);
-  return ports[0].dyn_cast<StringAttr>().getValue();
+  return ports[0].dyn_cast<StringAttr>().strref();
 }
 
 llvm::StringRef getInlineAttrName() { return "inline"; }
@@ -251,7 +246,7 @@ void eraseOps(SmallVectorImpl<Operation *> &opsToErase) {
   opsToErase.clear();
 }
 
-Value lookupOrOriginal(BlockAndValueMapping &mapper, Value originalValue) {
+Value lookupOrOriginal(IRMapping &mapper, Value originalValue) {
   if (mapper.contains(originalValue))
     return mapper.lookup(originalValue);
   return originalValue;
@@ -271,13 +266,13 @@ std::optional<StringRef> getOptionalName(Operation *operation,
                                          int64_t resultNum) {
   auto namesAttr = operation->getAttr("names").dyn_cast_or_null<ArrayAttr>();
   if (!namesAttr)
-    return llvm::None;
+    return std::nullopt;
   auto nameAttr = namesAttr[resultNum].dyn_cast_or_null<StringAttr>();
   if (!nameAttr)
-    return llvm::None;
+    return std::nullopt;
   auto name = nameAttr.getValue();
-  if (name.size() == 0)
-    return llvm::None;
+  if (name.empty())
+    return std::nullopt;
   return name;
 }
 
@@ -289,7 +284,7 @@ std::optional<mlir::StringRef> getOptionalName(mlir::Value v) {
         return getOptionalName(operation, i);
       }
     }
-    return llvm::None;
+    return std::nullopt;
   }
   auto *bb = v.getParentBlock();
   auto argNames = bb->getParentOp()->getAttrOfType<mlir::ArrayAttr>("argNames");
@@ -301,7 +296,7 @@ std::optional<mlir::StringRef> getOptionalName(mlir::Value v) {
       }
     }
   }
-  return llvm::None;
+  return std::nullopt;
 }
 
 std::optional<Type> getElementType(circt::Type ty) {
@@ -313,7 +308,7 @@ std::optional<Type> getElementType(circt::Type ty) {
     return busTensorTy.getElementType();
   if (auto arrayTy = ty.dyn_cast<hw::ArrayType>())
     return arrayTy.getElementType();
-  return llvm::None;
+  return std::nullopt;
 }
 
 circt::Operation *
@@ -340,7 +335,7 @@ declareExternalFuncForCall(hir::CallOp callOp, StringRef verilogName,
   }
 
   auto declOp = builder.create<hir::FuncExternOp>(
-      builder.getUnknownLoc(), callOp.callee(), callOp.getFuncType(),
+      builder.getUnknownLoc(), callOp.getCallee(), callOp.getFuncType(),
       builder.getStrArrayAttr(inputNamesRef),
       builder.getStrArrayAttr(resultNamesRef));
 
@@ -361,11 +356,12 @@ Value materializeIntegerConstant(OpBuilder &builder, int value, int64_t width) {
                              value));
 }
 
-static Optional<Type> convertBusType(hir::BusType busTy) {
+static std::optional<Type> convertBusType(hir::BusType busTy) {
   return convertToHWType(busTy.getElementType());
 }
 
-static Optional<Type> convertBusTensorType(hir::BusTensorType busTensorTy) {
+static std::optional<Type>
+convertBusTensorType(hir::BusTensorType busTensorTy) {
   auto elementHWTy = convertToHWType(busTensorTy.getElementType());
   if (!elementHWTy) {
     Builder builder(busTensorTy.getContext());
@@ -381,7 +377,7 @@ static Optional<Type> convertBusTensorType(hir::BusTensorType busTensorTy) {
   return hw::ArrayType::get(*elementHWTy, busTensorTy.getNumElements());
 }
 
-static Optional<Type> convertTensorType(mlir::TensorType tensorTy) {
+static std::optional<Type> convertTensorType(mlir::TensorType tensorTy) {
   auto elementHWTy = convertToHWType(tensorTy.getElementType());
   // Tensor element must always be a value type and hence always convertible
   // to a valid hw type.
@@ -390,13 +386,13 @@ static Optional<Type> convertTensorType(mlir::TensorType tensorTy) {
   return hw::ArrayType::get(*elementHWTy, tensorTy.getNumElements());
 }
 
-static Optional<Type> convertTupleType(mlir::TupleType tupleTy) {
+static std::optional<Type> convertTupleType(mlir::TupleType tupleTy) {
   int64_t width = 0;
   for (auto elementTy : tupleTy.getTypes()) {
     // We can't handle tensors/arrays inside tuple.
     auto elementHWTy = convertToHWType(elementTy);
-    if (!(elementHWTy && elementHWTy.getValue().isa<IntegerType>()))
-      return llvm::None;
+    if (!(elementHWTy && elementHWTy.value().isa<IntegerType>()))
+      return std::nullopt;
     width += (*elementHWTy).dyn_cast<IntegerType>().getWidth();
   }
   return IntegerType::get(tupleTy.getContext(), width);
@@ -417,7 +413,7 @@ std::optional<Type> convertToHWType(Type type) {
     return convertBusType(ty);
   if (auto ty = type.dyn_cast<hir::BusTensorType>())
     return convertBusTensorType(ty);
-  return llvm::None;
+  return std::nullopt;
 }
 
 Value insertBusSelectLogic(OpBuilder &builder, Value selectBus, Value trueBus,
@@ -498,7 +494,7 @@ Value emitIntegerBusOp(OpBuilder &builder, int64_t width) {
 std::optional<int64_t> getOptionalTimeOffset(mlir::Operation *operation) {
   auto offsetAttr = operation->getAttrOfType<IntegerAttr>("offset");
   if (!offsetAttr)
-    return llvm::None;
+    return std::nullopt;
   return offsetAttr.getInt();
 }
 

@@ -9,12 +9,12 @@
 
 /// This class calculates the schedule (time offset) of all operations such that
 /// the provided target loop II do not cause a dependence or resource violation.
-class HIRScheduler : Scheduler {
+class HIRScheduler : public Scheduler {
 public:
   HIRScheduler(mlir::func::FuncOp funcOp, llvm::raw_ostream &logger);
   int64_t getPortNumForMemoryOp(mlir::Operation *);
   mlir::LogicalResult init();
-  using Scheduler::getTimeOffset;
+  // using Scheduler::getTimeOffset;
 
 private:
   using Scheduler::logger;

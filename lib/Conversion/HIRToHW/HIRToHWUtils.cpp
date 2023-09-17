@@ -2,49 +2,51 @@
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWAttributes.h"
 #include "circt/Dialect/HW/HWOps.h"
+#include <mlir/IR/BuiltinAttributeInterfaces.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 
 void FuncToHWModulePortMap::addFuncInput(StringAttr name,
-                                         hw::PortDirection direction,
+                                         hw::PortInfo::Direction direction,
                                          Type type) {
   assert(name);
   assert(type);
-  assert((direction == hw::PortDirection::INPUT) ||
-         (direction == hw::PortDirection::OUTPUT));
+  assert((direction == hw::PortInfo::Direction::Input) ||
+         (direction == hw::PortInfo::Direction::Output));
 
-  size_t const argNum = (direction == hw::PortDirection::INPUT)
+  size_t const argNum = (direction == hw::PortInfo::Direction::Input)
                             ? (hwModuleInputArgNum++)
                             : (hwModuleResultArgNum++);
 
-  portInfoList.push_back(
-      {.name = name, .direction = direction, .type = type, .argNum = argNum});
+  hw::PortInfo portInfo = hw::PortInfo{{name, type, direction}, argNum};
+  portInfoList.push_back(portInfo);
 
-  mapFuncInputToHWPortInfo.push_back(
-      {.name = name, .direction = direction, .type = type, .argNum = argNum});
+  mapFuncInputToHWPortInfo.push_back(portInfo);
 }
 
 void FuncToHWModulePortMap::addClk(OpBuilder &builder) {
   auto clkName = builder.getStringAttr("clk");
-  portInfoList.push_back({.name = clkName,
-                          .direction = hw::PortDirection::INPUT,
-                          .type = builder.getI1Type(),
-                          .argNum = hwModuleInputArgNum++});
+
+  hw::PortInfo portInfo = hw::PortInfo{
+      {clkName, builder.getI1Type(), hw::PortInfo::Direction::Input},
+      hwModuleInputArgNum++};
+  portInfoList.push_back(portInfo);
 }
 
 void FuncToHWModulePortMap::addReset(OpBuilder &builder) {
   auto resetName = builder.getStringAttr("rst");
-  portInfoList.push_back({.name = resetName,
-                          .direction = hw::PortDirection::INPUT,
-                          .type = builder.getI1Type(),
-                          .argNum = hwModuleInputArgNum++});
+  hw::PortInfo portInfo = hw::PortInfo{
+      {resetName, builder.getI1Type(), hw::PortInfo::Direction::Input},
+      hwModuleInputArgNum++};
+  portInfoList.push_back(portInfo);
 }
 
 void FuncToHWModulePortMap::addFuncResult(StringAttr name, Type type) {
   assert(name);
   assert(type);
-  portInfoList.push_back({.name = name,
-                          .direction = hw::PortDirection::OUTPUT,
-                          .type = type,
-                          .argNum = hwModuleResultArgNum++});
+  hw::PortInfo portInfo = hw::PortInfo{
+      {name, type, hw::PortInfo::Direction::Output}, hwModuleResultArgNum++};
+  portInfoList.push_back(portInfo);
 }
 
 bool isSendBus(DictionaryAttr busAttr) {
@@ -55,16 +57,15 @@ ArrayRef<hw::PortInfo> FuncToHWModulePortMap::getPortInfoList() {
   return portInfoList;
 }
 
-const hw::PortInfo
+hw::PortInfo
 FuncToHWModulePortMap::getPortInfoForFuncInput(size_t inputArgNum) {
   auto modulePortInfo = mapFuncInputToHWPortInfo[inputArgNum];
-  assert((modulePortInfo.direction == hw::PortDirection::INPUT) ||
-         (modulePortInfo.direction == hw::PortDirection::OUTPUT));
+  assert(!modulePortInfo.isInOut());
   return modulePortInfo;
 }
 
 std::pair<SmallVector<Value>, SmallVector<Value>>
-filterCallOpArgs(hir::FuncType funcTy, OperandRange args) {
+filterCallOpArgs(hir::FuncType funcTy, SmallVector<Value, 4> args) {
   SmallVector<Value> inputs;
   SmallVector<Value> results;
   for (uint64_t i = 0; i < funcTy.getInputTypes().size(); i++) {
@@ -97,15 +98,15 @@ FuncToHWModulePortMap getHWModulePortMap(OpBuilder &builder,
     auto attr = funcTy.getInputAttrs()[i];
     auto name = inputNames[i].dyn_cast<StringAttr>();
     if (helper::isBusLikeType(originalTy) && isSendBus(attr)) {
-      portMap.addFuncInput(name, hw::PortDirection::OUTPUT, *hwTy);
+      portMap.addFuncInput(name, hw::PortInfo::Direction::Output, *hwTy);
     } else {
-      portMap.addFuncInput(name, hw::PortDirection::INPUT, *hwTy);
+      portMap.addFuncInput(name, hw::PortInfo::Direction::Input, *hwTy);
     }
   }
 
   // Add time input arg.
   auto timeVarName = inputNames[i].dyn_cast<StringAttr>();
-  portMap.addFuncInput(timeVarName, hw::PortDirection::INPUT,
+  portMap.addFuncInput(timeVarName, hw::PortInfo::Direction::Input,
                        builder.getI1Type());
 
   // Add clk input arg.
@@ -172,21 +173,24 @@ ArrayAttr getHWParams(Attribute paramsAttr, bool ignoreValues) {
   SmallVector<Attribute> hwParams;
   for (const NamedAttribute &param : params) {
     auto name = builder.getStringAttr(param.getName().strref());
-    auto type = TypeAttr::get(param.getValue().getType());
-    auto value = ignoreValues ? Attribute() : param.getValue();
-    auto hwParam =
-        hw::ParamDeclAttr::get(builder.getContext(), name, type, value);
+    hw::ParamDeclAttr hwParam;
+    mlir::TypedAttr value = dyn_cast<mlir::TypedAttr>(param.getValue());
+    if (ignoreValues || !value)
+      hwParam = hw::ParamDeclAttr::get(
+          name, mlir::NoneType::get(builder.getContext()));
+    else
+      hwParam = hw::ParamDeclAttr::get(name, value);
     hwParams.push_back(hwParam);
   }
   return ArrayAttr::get(builder.getContext(), hwParams);
 }
 
 Value getDelayedValue(OpBuilder &builder, Value input, int64_t delay,
-                      Optional<StringRef> name, Location loc, Value clk,
+                      std::optional<StringRef> name, Location loc, Value clk,
                       Value reset) {
   assert(input.getType().isa<mlir::IntegerType>() ||
          input.getType().isa<hw::ArrayType>());
-  auto nameAttr = name ? builder.getStringAttr(name.getValue()) : StringAttr();
+  auto nameAttr = name ? builder.getStringAttr(name.value()) : StringAttr();
 
   Type regTy;
   if (delay > 1)
@@ -259,20 +263,20 @@ Value convertToNamedValue(OpBuilder &builder, StringRef name, Value val) {
   return builder.create<sv::ReadInOutOp>(builder.getUnknownLoc(), wire);
 }
 
-Value convertToOptionalNamedValue(OpBuilder &builder, Optional<StringRef> name,
-                                  Value val) {
+Value convertToOptionalNamedValue(OpBuilder &builder,
+                                  std::optional<StringRef> name, Value val) {
 
   assert(val.getType().isa<mlir::IntegerType>() ||
          val.getType().isa<hw::ArrayType>());
   if (name) {
-    return convertToNamedValue(builder, name.getValue(), val);
+    return convertToNamedValue(builder, name.value(), val);
   }
   return val;
 }
 
 SmallVector<Value> insertBusMapLogic(OpBuilder &builder, Block &bodyBlock,
                                      ArrayRef<Value> operands) {
-  BlockAndValueMapping operandMap;
+  IRMapping operandMap;
   SmallVector<Value> results;
   for (size_t i = 0; i < operands.size(); i++) {
     operandMap.map(bodyBlock.getArgument(i), operands[i]);

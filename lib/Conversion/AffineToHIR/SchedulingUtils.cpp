@@ -5,7 +5,7 @@
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Support/LLVM.h"
@@ -39,22 +39,22 @@ void addCoeff(MPObjective *constr, MPVariable *var, int64_t coeff) {
   constr->SetCoefficient(var, prevCoeff + coeff);
 }
 
-static Optional<std::tuple<int, int, int>> getConstantBounds(AffineForOp op) {
+static std::optional<std::tuple<int, int, int>>
+getConstantBounds(affine::AffineForOp op) {
   int lb = op.getLowerBound().getMap().getSingleConstantResult();
   int ub = op.getUpperBound().getMap().getSingleConstantResult();
   int step = op.getStep();
   return std::make_tuple(lb, ub, step);
 }
-static Optional<std::tuple<int, int, int>> getConstantBounds(Value iv) {
-  auto op =
-      dyn_cast<mlir::affine::AffineForOp>(iv.getParentRegion()->getParentOp());
+static std::optional<std::tuple<int, int, int>> getConstantBounds(Value iv) {
+  auto op = dyn_cast<affine::AffineForOp>(iv.getParentRegion()->getParentOp());
   assert(op.getInductionVar() == iv);
   return getConstantBounds(op);
 }
 
 static SmallVector<Operation *, 4> getOpAndParents(Operation *operation) {
   SmallVector<Operation *, 4> opAndParents;
-  while (!isa<mlir::func::FuncOp>(operation)) {
+  while (!isa<func::FuncOp>(operation)) {
     opAndParents.push_back(operation);
     operation = operation->getParentOp();
   }
@@ -68,7 +68,8 @@ using namespace mlir;
 OpInfo::OpInfo(Operation *operation, int staticPos)
     : operation(operation), staticPos(staticPos) {
   auto *currentOperation = operation;
-  while (auto affineForOp = currentOperation->getParentOfType<AffineForOp>()) {
+  while (auto affineForOp =
+             currentOperation->getParentOfType<affine::AffineForOp>()) {
     parentLoops.push_back(affineForOp);
     parentLoopIVs.push_back(affineForOp.getInductionVar());
     currentOperation = affineForOp;
@@ -78,7 +79,7 @@ OpInfo::OpInfo(Operation *operation, int staticPos)
 Operation *OpInfo::getOperation() { return operation; }
 int OpInfo::getStaticPosition() { return staticPos; }
 size_t OpInfo::getNumParentLoops() { return parentLoops.size(); }
-AffineForOp OpInfo::getParentLoop(int i) { return parentLoops[i]; }
+affine::AffineForOp OpInfo::getParentLoop(int i) { return parentLoops[i]; }
 Value OpInfo::getParentLoopIV(int i) { return parentLoopIVs[i]; }
 
 //-----------------------------------------------------------------------------
@@ -86,43 +87,44 @@ Value OpInfo::getParentLoopIV(int i) { return parentLoopIVs[i]; }
 //-----------------------------------------------------------------------------
 MemOpInfo::MemOpInfo(Operation *operation, int staticPos)
     : OpInfo(operation, staticPos) {
-  assert(isa<AffineLoadOp>(operation) || isa<AffineStoreOp>(operation));
+  assert(isa<affine::AffineLoadOp>(operation) ||
+         isa<affine::AffineStoreOp>(operation));
 }
 
 Value MemOpInfo::getMemRef() {
-  if (auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation()))
+  if (auto storeOp = dyn_cast<affine::AffineStoreOp>(this->getOperation()))
     return storeOp.getMemRef();
-  auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation());
+  auto loadOp = dyn_cast<affine::AffineLoadOp>(this->getOperation());
   assert(loadOp);
   return loadOp.getMemRef();
 }
 
 int64_t MemOpInfo::getDelay() {
   auto pragmaHandler = MemrefPragmaHandler(this->getMemRef());
-  if (isa<AffineLoadOp>(this->getOperation()))
+  if (isa<affine::AffineLoadOp>(this->getOperation()))
     return pragmaHandler.getRdLatency();
   return pragmaHandler.getWrLatency();
 }
 
 bool MemOpInfo::isConstant() { return false; }
 
-bool MemOpInfo::isLoad() { return isa<AffineLoadOp>(getOperation()); }
+bool MemOpInfo::isLoad() { return isa<affine::AffineLoadOp>(getOperation()); }
 
 size_t MemOpInfo::getNumMemDims() { return getAffineMap().getNumResults(); }
 
-mlir::AffineMap MemOpInfo::getAffineMap() {
-  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation()))
+AffineMap MemOpInfo::getAffineMap() {
+  if (auto loadOp = dyn_cast<affine::AffineLoadOp>(this->getOperation()))
     return loadOp.getAffineMap();
-  return dyn_cast<AffineStoreOp>(this->getOperation()).getAffineMap();
+  return dyn_cast<affine::AffineStoreOp>(this->getOperation()).getAffineMap();
 }
 
 int64_t MemOpInfo::getConstCoeff(int64_t dim) {
   SmallVector<int64_t> coeffs;
   AffineExpr expr;
-  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation())) {
+  if (auto loadOp = dyn_cast<affine::AffineLoadOp>(this->getOperation())) {
     expr = loadOp.getAffineMap().getResult(dim);
   } else {
-    auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation());
+    auto storeOp = dyn_cast<affine::AffineStoreOp>(this->getOperation());
     expr = storeOp.getAffineMap().getResult(dim);
   }
 
@@ -135,14 +137,15 @@ int64_t MemOpInfo::getConstCoeff(int64_t dim) {
   return coeffs.back();
 }
 
-int64_t MemOpInfo::getIdxCoeff(mlir::Value var, int64_t dim) {
+int64_t MemOpInfo::getIdxCoeff(Value var, int64_t dim) {
   auto indices = getIndices();
-  Optional<size_t> varLoc = llvm::None;
+  std::optional<size_t> varLoc = std::nullopt;
   AffineExpr expr;
 
-  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation())) {
+  if (auto loadOp = dyn_cast<affine::AffineLoadOp>(this->getOperation())) {
     expr = loadOp.getAffineMap().getResult(dim);
-  } else if (auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation())) {
+  } else if (auto storeOp =
+                 dyn_cast<affine::AffineStoreOp>(this->getOperation())) {
     expr = storeOp.getAffineMap().getResult(dim);
   } else {
     llvm_unreachable("Must be a affine load or store op.");
@@ -166,19 +169,19 @@ int64_t MemOpInfo::getIdxCoeff(mlir::Value var, int64_t dim) {
   return coeffs[*varLoc];
 }
 
-llvm::SmallVector<mlir::Value> MemOpInfo::getIndices() {
-  if (auto loadOp = dyn_cast<AffineLoadOp>(this->getOperation()))
+llvm::SmallVector<Value> MemOpInfo::getIndices() {
+  if (auto loadOp = dyn_cast<affine::AffineLoadOp>(this->getOperation()))
     return loadOp.getIndices();
 
-  auto storeOp = dyn_cast<AffineStoreOp>(this->getOperation());
+  auto storeOp = dyn_cast<affine::AffineStoreOp>(this->getOperation());
   assert(storeOp);
   return storeOp.getIndices();
 }
 //-----------------------------------------------------------------------------
 // ArithOpInfo.
 //-----------------------------------------------------------------------------
-ArithOpInfo::ArithOpInfo(mlir::Operation *operation) {
-  assert(isa<arith::ArithmeticDialect>(operation->getDialect()));
+ArithOpInfo::ArithOpInfo(Operation *operation) {
+  assert(isa<arith::ArithDialect>(operation->getDialect()));
   assert(!isa<arith::ConstantOp>(operation) && "arith.constant ");
   if (isa<arith::AddIOp>(operation)) {
     this->delay = 0;
@@ -374,10 +377,11 @@ MemoryDependenceILP::MemoryDependenceILP(MemOpInfo &src, MemOpInfo &dest,
 
 operations_research::MPVariable *
 MemoryDependenceILP::getOrAddBoundedILPSrcVar(std::string &&name,
-                                              mlir::Value ssaVar) {
+                                              Value ssaVar) {
 
   assert(ssaVar);
-  auto forOp = dyn_cast<AffineForOp>(ssaVar.getParentRegion()->getParentOp());
+  auto forOp =
+      dyn_cast<affine::AffineForOp>(ssaVar.getParentRegion()->getParentOp());
   assert(forOp);
   auto bounds = getConstantBounds(forOp);
   auto lb = std::get<0>(*bounds);
@@ -396,10 +400,11 @@ MemoryDependenceILP::getOrAddBoundedILPSrcVar(std::string &&name,
 
 operations_research::MPVariable *
 MemoryDependenceILP::getOrAddBoundedILPDestVar(std::string &&name,
-                                               mlir::Value ssaVar) {
+                                               Value ssaVar) {
 
   assert(ssaVar);
-  auto forOp = dyn_cast<AffineForOp>(ssaVar.getParentRegion()->getParentOp());
+  auto forOp =
+      dyn_cast<affine::AffineForOp>(ssaVar.getParentRegion()->getParentOp());
   assert(forOp);
   auto bounds = getConstantBounds(forOp);
   auto lb = std::get<0>(*bounds);
@@ -416,9 +421,8 @@ MemoryDependenceILP::getOrAddBoundedILPDestVar(std::string &&name,
   return ilpVar;
 }
 
-std::stack<mlir::affine::AffineForOp>
-MemoryDependenceILP::getCommonParentLoops() {
-  std::stack<mlir::affine::AffineForOp> commonLoops;
+std::stack<affine::AffineForOp> MemoryDependenceILP::getCommonParentLoops() {
+  std::stack<affine::AffineForOp> commonLoops;
   for (size_t i = 0;
        i < std::min(src.getNumParentLoops(), dest.getNumParentLoops()); i++) {
     auto parent = src.getParentLoop(src.getNumParentLoops() - i - 1);
@@ -530,16 +534,16 @@ Scheduler::Scheduler(llvm::raw_ostream &logger)
   addCoeff(this->MutableObjective(), this->tmax, 1);
 }
 
-Optional<operations_research::MPVariable *>
-Scheduler::getILPVar(mlir::Operation *op) {
+std::optional<operations_research::MPVariable *>
+Scheduler::getILPVar(Operation *op) {
 
   if (this->mapOpToVar.find(op) == this->mapOpToVar.end())
-    return llvm::None;
+    return std::nullopt;
   return this->mapOpToVar[op];
 }
 
 operations_research::MPVariable *
-Scheduler::getOrAddTimeOffset(mlir::Operation *op, std::string name) {
+Scheduler::getOrAddTimeOffset(Operation *op, std::string name) {
   auto var = getILPVar(op);
   if (var)
     return *var;
@@ -548,8 +552,7 @@ Scheduler::getOrAddTimeOffset(mlir::Operation *op, std::string name) {
 }
 
 operations_research::MPVariable *
-Scheduler::getOrAddTotalTimeOffset(mlir::Operation *operation,
-                                   std ::string name) {
+Scheduler::getOrAddTotalTimeOffset(Operation *operation, std ::string name) {
 
   SmallVector<MPVariable *, 4> timeOffsets;
   for (auto *op : getOpAndParents(operation)) {
@@ -564,7 +567,7 @@ Scheduler::getOrAddTotalTimeOffset(mlir::Operation *operation,
 }
 
 operations_research::MPVariable *
-Scheduler::getOrAddResourceAllocation(mlir::Operation *op, Resource *resource,
+Scheduler::getOrAddResourceAllocation(Operation *op, Resource *resource,
                                       const std ::string &name) {
   auto key = std::make_pair(op, resource);
   if (mapOpAndResourceToVar[key] != NULL)
@@ -575,13 +578,13 @@ Scheduler::getOrAddResourceAllocation(mlir::Operation *op, Resource *resource,
   return p;
 }
 
-std::optional<int64_t> Scheduler::getResourceAllocation(mlir::Operation *op,
+std::optional<int64_t> Scheduler::getResourceAllocation(Operation *op,
                                                         Resource *resource) {
 
   auto key = std::make_pair(op, resource);
   if (mapOpAndResourceToVar[key] != NULL)
     return mapOpAndResourceToVar[key]->solution_value();
-  return llvm::None;
+  return std::nullopt;
 }
 void Scheduler::addDependence(Dependence dep) {
   // dest_time_offset - src_time_offset > delay.
@@ -661,7 +664,7 @@ void Scheduler::addDelayRegisterCost(Dependence dep, size_t width) {
   addCoeff(this->MutableObjective(), *destVar, 1);
 }
 
-int64_t Scheduler::getTimeOffset(mlir::Operation *op) {
+int64_t Scheduler::getTimeOffset(Operation *op) {
   auto var = this->getILPVar(op);
   // assert(var && "Could not find time offset.");
   if (!var) {

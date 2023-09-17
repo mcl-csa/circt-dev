@@ -19,7 +19,7 @@
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
 #include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -52,8 +52,8 @@ private:
   LogicalResult visitOp(mlir::arith::NegFOp);
   LogicalResult visitOp(mlir::LLVM::UndefOp);
   LogicalResult visitArithFOp(Operation *operation);
-  Optional<int> selectRdPort(Value mem);
-  Optional<int> selectWrPort(Value mem);
+  std::optional<int> selectRdPort(Value mem);
+  std::optional<int> selectWrPort(Value mem);
   void safelyEraseOps();
 
 private:
@@ -95,7 +95,7 @@ ArrayAttr getMemrefPortAttr(Value mem) {
   return portsAttr;
 }
 
-Optional<int> HIRPragma::selectRdPort(Value mem) {
+std::optional<int> HIRPragma::selectRdPort(Value mem) {
   auto portsAttr = getMemrefPortAttr(mem);
   assert(0 < portsAttr.size() && portsAttr.size() <= 2);
   if (portsAttr.size() == 1)
@@ -111,10 +111,10 @@ Optional<int> HIRPragma::selectRdPort(Value mem) {
   }
   if (helper::isMemrefRdPort(pOld))
     return prevPortNum;
-  return llvm::None;
+  return std::nullopt;
 }
 
-Optional<int> HIRPragma::selectWrPort(Value mem) {
+std::optional<int> HIRPragma::selectWrPort(Value mem) {
   auto portsAttr = getMemrefPortAttr(mem);
   assert(0 < portsAttr.size() && portsAttr.size() <= 2);
   if (portsAttr.size() == 1)
@@ -130,7 +130,7 @@ Optional<int> HIRPragma::selectWrPort(Value mem) {
   }
   if (helper::isMemrefWrPort(pOld))
     return prevPortNum;
-  return llvm::None;
+  return std::nullopt;
 }
 
 void HIRPragma::safelyEraseOps() {
@@ -218,8 +218,7 @@ void HIRPragma::runOnOperation() {
               return WalkResult::interrupt();
           } else if (isa<mlir::arith::ConstantOp>(operation)) {
             WalkResult::advance();
-          } else if (isa<mlir::arith::ArithmeticDialect>(
-                         operation->getDialect())) {
+          } else if (isa<mlir::arith::ArithDialect>(operation->getDialect())) {
             if (failed(visitArithFOp(operation)))
               return WalkResult::interrupt();
           } else if (isa<mlir::scf::ForOp, mlir::scf::IfOp, mlir::scf::WhileOp,
@@ -253,9 +252,9 @@ DictionaryAttr getHIRValueAttrs(DictionaryAttr hlsAttrs) {
   return builder.getDictionaryAttr(attrs);
 }
 
-Optional<DictionaryAttr> getHIRMemrefAttrs(Operation *operation,
-                                           DictionaryAttr hlsAttrs,
-                                           MemRefType ty) {
+std::optional<DictionaryAttr> getHIRMemrefAttrs(Operation *operation,
+                                                DictionaryAttr hlsAttrs,
+                                                MemRefType ty) {
   if (!hlsAttrs)
     return DictionaryAttr();
   Builder builder(hlsAttrs.getContext());
@@ -273,8 +272,8 @@ Optional<DictionaryAttr> getHIRMemrefAttrs(Operation *operation,
       isReg = true;
 
   std::string type = "";
-  Optional<NamedAttribute> rdPort;
-  Optional<NamedAttribute> wrPort;
+  std::optional<NamedAttribute> rdPort;
+  std::optional<NamedAttribute> wrPort;
   if (isReg) {
     rdPort = builder.getNamedAttr("rd_latency", builder.getI64IntegerAttr(0));
     wrPort = builder.getNamedAttr("wr_latency", builder.getI64IntegerAttr(1));
@@ -298,14 +297,14 @@ Optional<DictionaryAttr> getHIRMemrefAttrs(Operation *operation,
     type = ty.str();
   } else {
     operation->emitError("Could not determine memory type.");
-    return llvm::None;
+    return std::nullopt;
   }
   if (type == "ram_1p") {
     if (!rdPort && !wrPort) {
       operation->emitError("Could not determine rd and/or wr port latency. "
                            "Original attrs : ")
           << hlsAttrs;
-      return llvm::None;
+      return std::nullopt;
     }
     if (rdPort && wrPort)
       portsAttr =
@@ -319,7 +318,7 @@ Optional<DictionaryAttr> getHIRMemrefAttrs(Operation *operation,
     if (!rdPort || !wrPort) {
       operation->emitError(
           "Need both rd and wr port latency for simple dual port ram.");
-      return llvm::None;
+      return std::nullopt;
     }
     portsAttr = builder.getArrayAttr({builder.getDictionaryAttr(*rdPort),
                                       builder.getDictionaryAttr(*wrPort)});
@@ -327,14 +326,14 @@ Optional<DictionaryAttr> getHIRMemrefAttrs(Operation *operation,
     if (!rdPort || !wrPort) {
       operation->emitError(
           "Need both rd and wr port latency for true dual port ram.");
-      return llvm::None;
+      return std::nullopt;
     }
     portsAttr =
         builder.getArrayAttr({builder.getDictionaryAttr({*rdPort, *wrPort}),
                               builder.getDictionaryAttr({*rdPort, *wrPort})});
   } else {
     operation->emitError("Unknown type of memory : ") << type;
-    return llvm::None;
+    return std::nullopt;
   }
 
   attrs.push_back(builder.getNamedAttr("hir.memref.ports", portsAttr));
@@ -347,15 +346,16 @@ Optional<DictionaryAttr> getHIRMemrefAttrs(Operation *operation,
       memKind = builder.getStringAttr(impl.strref().lower());
     if (!memKind)
       return operation->emitError("Could not determine memory impl."),
-             llvm::None;
+             std::nullopt;
     attrs.push_back(builder.getNamedAttr("mem_kind", memKind));
   }
 
   return builder.getDictionaryAttr(attrs);
 }
 
-Optional<ArrayAttr> newArgOrResultAttrs(Operation *op, ArrayAttr originalAttrs,
-                                        ArrayRef<Type> types) {
+std::optional<ArrayAttr> newArgOrResultAttrs(Operation *op,
+                                             ArrayAttr originalAttrs,
+                                             ArrayRef<Type> types) {
   if (!originalAttrs)
     return ArrayAttr();
 
@@ -364,7 +364,7 @@ Optional<ArrayAttr> newArgOrResultAttrs(Operation *op, ArrayAttr originalAttrs,
   for (size_t i = 0; i < originalAttrs.size(); i++) {
     auto ty = types[i];
     auto argAttr = originalAttrs[i].dyn_cast<DictionaryAttr>();
-    Optional<DictionaryAttr> newAttr;
+    std::optional<DictionaryAttr> newAttr;
     if (auto memTy = ty.dyn_cast<mlir::MemRefType>()) {
       newAttr = getHIRMemrefAttrs(op, argAttr, memTy);
     } else if (ty.isIntOrFloat()) {
@@ -374,7 +374,7 @@ Optional<ArrayAttr> newArgOrResultAttrs(Operation *op, ArrayAttr originalAttrs,
     }
     if (!newAttr)
       return op->emitError("Could not get memref attr for arg ") << i,
-             llvm::None;
+             std::nullopt;
     newArgAttrs.push_back(*newAttr);
   }
   return builder.getArrayAttr(newArgAttrs);
@@ -416,7 +416,7 @@ LogicalResult HIRPragma::visitOp(mlir::memref::AllocaOp op) {
   // FIXME: This is too simple. It can not eliminate a load if another load to a
   // different address is in between. Use a map instead of one 'loadOp' variable
   // to handle that.
-  // Optional<mlir::affine::AffineLoadOp> loadOp;
+  // std::optional<mlir::affine::AffineLoadOp> loadOp;
   // for (auto *user : op.getMemref().getUsers()) {
   //  if (auto u = dyn_cast<mlir::affine::AffineLoadOp>(user)) {
   //    if (loadOp && loadOp->getIndices() == u.getIndices()) {
@@ -426,7 +426,7 @@ LogicalResult HIRPragma::visitOp(mlir::memref::AllocaOp op) {
   //      loadOp = u;
   //    }
   //  } else if (auto u = dyn_cast<mlir::affine::AffineStoreOp>(user)) {
-  //    loadOp = llvm::None;
+  //    loadOp = std::nullopt;
   //  } else
   //    return user->emitError("Only affine.load and affine.store are supported
   //    "
@@ -468,7 +468,7 @@ LogicalResult HIRPragma::visitOp(mlir::affine::AffineLoadOp op) {
     return op->emitError("Could not find a read port of the memref.");
 
   IntegerAttr resultDelay = builder.getI64IntegerAttr(
-      helper::getMemrefPortRdLatency(portsAttr[*rdPortNum]).getValue());
+      helper::getMemrefPortRdLatency(portsAttr[*rdPortNum]).value());
 
   op->setAttr("result_delays", builder.getArrayAttr(resultDelay));
   op->setAttr("hir.memref_port", builder.getI64IntegerAttr(*rdPortNum));

@@ -11,7 +11,7 @@ verifyDelayAttribute(mlir::function_ref<InFlightDiagnostic()> emitError,
   if (!attrDict)
     return emitError() << "Could not find hir.delay attr";
   auto delayNameAndAttr = attrDict.getNamed("hir.delay");
-  if (!delayNameAndAttr.hasValue())
+  if (!delayNameAndAttr)
     return emitError() << "Could not find hir.delay attr";
   if (!delayNameAndAttr->getValue().dyn_cast<IntegerAttr>())
     return emitError() << "hir.delay attr must be IntegerAttr";
@@ -22,7 +22,7 @@ LogicalResult
 verifyMemrefPortsAttribute(mlir::function_ref<InFlightDiagnostic()> emitError,
                            DictionaryAttr attrDict) {
   auto memrefPortsNameAndAttr = attrDict.getNamed("hir.memref.ports");
-  if (!memrefPortsNameAndAttr.hasValue())
+  if (!memrefPortsNameAndAttr)
     return failure();
   if (!memrefPortsNameAndAttr->getValue().dyn_cast<ArrayAttr>())
     return failure();
@@ -33,7 +33,7 @@ LogicalResult
 verifyBusPortsAttribute(mlir::function_ref<InFlightDiagnostic()> emitError,
                         DictionaryAttr attrDict) {
   auto memrefPortsNameAndAttr = attrDict.getNamed("hir.bus.ports");
-  if (!memrefPortsNameAndAttr.hasValue())
+  if (!memrefPortsNameAndAttr)
     return failure();
   if (!memrefPortsNameAndAttr->getValue().dyn_cast<ArrayAttr>())
     return failure();

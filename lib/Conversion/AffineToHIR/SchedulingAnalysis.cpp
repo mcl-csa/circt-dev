@@ -5,7 +5,7 @@
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -41,25 +41,26 @@ static Operation *getOpContainingUserInScope(Operation *user, Region *scope) {
   return user;
 }
 
-static Optional<size_t> getArgDelay(Operation *operation, size_t i) {
+static std::optional<size_t> getArgDelay(Operation *operation, size_t i) {
   if (auto op = dyn_cast<func::CallOp>(operation)) {
     return FuncExternPragmaHandler(op).getArgDelay(i);
   }
   return 0;
 }
 
-static Optional<size_t> getResultDelay(Operation *operation, size_t i) {
-  if (isa<arith::ArithmeticDialect>(operation->getDialect()))
+static std::optional<size_t> getResultDelay(Operation *operation, size_t i) {
+  if (isa<arith::ArithDialect>(operation->getDialect()))
     return ArithOpInfo(operation).getDelay();
-  if (isa<AffineLoadOp, AffineStoreOp>(operation))
+  if (isa<affine::AffineLoadOp, affine::AffineStoreOp>(operation))
     return MemOpInfo(operation, 0 /*dont care*/).getDelay();
   if (auto op = dyn_cast<func::CallOp>(operation)) {
     return FuncExternPragmaHandler(op).getResultDelay(i);
   }
-  return llvm::None;
+  return std::nullopt;
 }
 
-static LogicalResult getCommonII(Operation *op, Optional<int64_t> &commonII) {
+static LogicalResult getCommonII(Operation *op,
+                                 std::optional<int64_t> &commonII) {
   auto *parent = op->getParentOp();
   while (!isa<func::FuncOp>(parent)) {
     auto iiAttr = parent->getAttrOfType<IntegerAttr>("II");
@@ -76,7 +77,7 @@ static LogicalResult getCommonII(Operation *op, Optional<int64_t> &commonII) {
 }
 
 static LogicalResult getCommonII(Operation *op1, Operation *op2,
-                                 Optional<int64_t> commonII) {
+                                 std::optional<int64_t> commonII) {
   if (failed(getCommonII(op1, commonII)))
     return failure();
 
@@ -93,7 +94,7 @@ HIRScheduler::HIRScheduler(mlir::func::FuncOp op, llvm::raw_ostream &logger)
 
 int64_t HIRScheduler::getPortNumForMemoryOp(Operation *operation) {
   // FIXME: Handle multiple read/write ports.
-  if (auto loadOp = dyn_cast<AffineLoadOp>(operation)) {
+  if (auto loadOp = dyn_cast<affine::AffineLoadOp>(operation)) {
     auto pragma = MemrefPragmaHandler(loadOp.getMemref());
     assert(pragma.getNumRdPorts() > 0);
     auto *resource = mapMemref2RdPortResource[loadOp.getMemref()];
@@ -105,7 +106,7 @@ int64_t HIRScheduler::getPortNumForMemoryOp(Operation *operation) {
         this->getResourceAllocation(operation, resource).value_or(0));
   }
 
-  auto storeOp = dyn_cast<AffineStoreOp>(operation);
+  auto storeOp = dyn_cast<affine::AffineStoreOp>(operation);
   auto pragma = MemrefPragmaHandler(storeOp.getMemref());
   assert(pragma.getNumWrPorts() > 0);
   auto *resource = mapMemref2WrPortResource[storeOp.getMemref()];
@@ -260,7 +261,7 @@ LogicalResult HIRScheduler::insertPortConflict(MemOpInfo src, MemOpInfo dest) {
     return success();
   }
 
-  Optional<int64_t> commonII;
+  std::optional<int64_t> commonII;
   if (failed(getCommonII(src.getOperation(), dest.getOperation(), commonII)))
     return failure();
 
@@ -283,7 +284,7 @@ LogicalResult HIRScheduler::insertPortConflict(MemOpInfo src, MemOpInfo dest) {
 LogicalResult HIRScheduler::insertMemAccessConstraints() {
   SmallVector<MemOpInfo> memOperations;
   funcOp.walk([&memOperations](Operation *operation) {
-    if (isa<AffineLoadOp, AffineStoreOp>(operation))
+    if (isa<affine::AffineLoadOp, affine::AffineStoreOp>(operation))
       memOperations.push_back(MemOpInfo(operation, memOperations.size()));
     return WalkResult::advance();
   });
@@ -301,16 +302,16 @@ LogicalResult HIRScheduler::insertMemAccessConstraints() {
   return success();
 }
 
-static Optional<Dependence> getDependence(Operation *def, OpOperand &use,
-                                          size_t resultDelay) {
-  Optional<size_t> argDelay = 0;
+static std::optional<Dependence> getDependence(Operation *def, OpOperand &use,
+                                               size_t resultDelay) {
+  std::optional<size_t> argDelay = 0;
 
   if (def) {
     argDelay = getArgDelay(use.getOwner(), use.getOperandNumber());
     if (!argDelay) {
       def->emitError("Could not find delay for arg ")
           << use.getOperandNumber() << ".";
-      return llvm::None;
+      return std::nullopt;
     }
   } else
     // if `def` is not specified then the operand must be a region arg.

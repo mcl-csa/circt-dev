@@ -51,9 +51,6 @@ SmallVector<Value, 4> hir::FuncOp::getOperands() {
   return operands;
 }
 
-mlir::Type hir::FuncOp::getFunctionType() {
-  return this->getFunctionType().dyn_cast<mlir::FunctionType>();
-}
 hir::FuncType hir::FuncOp::getFuncType() {
   return getFuncTy().dyn_cast<hir::FuncType>();
 }
@@ -99,7 +96,7 @@ void hir::FuncOp::updateArguments(ArrayRef<DictionaryAttr> inputAttrs) {
   functionArgAttrs.push_back(
       DictionaryAttr::get(this->getContext(), ArrayRef<NamedAttribute>({})));
 
-  this->setAllArgAttrs(functionArgAttrs);
+  this->setArgAttrsAttr(ArrayAttr::get(this->getContext(), functionArgAttrs));
 }
 
 void hir::FuncExternOp::updateArguments(ArrayRef<DictionaryAttr> inputAttrs) {

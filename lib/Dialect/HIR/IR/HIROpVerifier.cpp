@@ -10,9 +10,9 @@ using namespace hir;
 //-----------------------------------------------------------------------------
 namespace {
 LogicalResult verifyTimeAndOffset(Value time, std::optional<uint64_t> offset) {
-  if (time && !offset.hasValue())
+  if (time && !offset)
     return failure();
-  if (offset.hasValue() && offset.getValue() < 0)
+  if (offset && offset.value() < 0)
     return failure();
   return success();
 }
@@ -45,7 +45,7 @@ namespace hir {
 // HIR Op verifiers.
 //-----------------------------------------------------------------------------
 LogicalResult FuncOp::verify() {
-  auto funcTy = this->funcTy().dyn_cast<hir::FuncType>();
+  auto funcTy = this->getFuncTy().dyn_cast<hir::FuncType>();
   if (!funcTy)
     return this->emitError("OpVerifier failed. hir::FuncOp::funcTy must be of "
                            "type hir::FuncType.");
@@ -58,14 +58,14 @@ LogicalResult FuncOp::verify() {
   auto argAttrs =
       this->getOperation()->getAttrOfType<mlir::ArrayAttr>("arg_attrs");
   auto inputAttrs = this->getFuncType().getInputAttrs();
-  if (inputAttrs.size() > 0) {
+  if (!inputAttrs.empty()) {
     if (!argAttrs)
       return this->emitError("Could not find arg_attrs.");
 
     if (inputAttrs.size() + 1 != argAttrs.size())
       return this->emitError("Wrong number of arg_attrs.");
   }
-  if (this->getFuncType().getResultAttrs().size() > 0) {
+  if (!this->getFuncType().getResultAttrs().empty()) {
     if (!this->getOperation()->getAttrOfType<mlir::ArrayAttr>("res_attrs"))
       return this->emitError("Could not find res_attrs.");
 
@@ -81,31 +81,31 @@ LogicalResult FuncOp::verify() {
     if (arg.getType().isa<hir::MemrefType>()) {
       for (auto &use : arg.getUses()) {
         if (auto loadOp = dyn_cast<hir::LoadOp>(use.getOwner())) {
-          auto port = loadOp.port();
+          auto port = loadOp.getPort();
           if (!port)
             continue;
           auto ports = helper::extractMemrefPortsFromDict(
               this->getFuncType().getInputAttrs()[i]);
 
-          if (ports.getValue().size() <= port.getValue())
+          if (ports.value().size() <= port.value())
             return use.getOwner()->emitError()
                    << "specified port does not exist.";
-          auto loadOpPort = ports.getValue()[port.getValue()];
+          auto loadOpPort = ports.value()[port.value()];
           if (!helper::isMemrefRdPort(loadOpPort))
             return use.getOwner()->emitError()
                    << "specified port is not a read port.";
         } else if (auto storeOp = dyn_cast<hir::StoreOp>(use.getOwner())) {
-          auto port = storeOp.port();
+          auto port = storeOp.getPort();
           if (!port)
             continue;
           auto ports = helper::extractMemrefPortsFromDict(
               this->getFuncType().getInputAttrs()[i]);
 
-          if (ports.getValue().size() <= port.getValue())
+          if (ports.value().size() <= port.value())
             return use.getOwner()->emitError()
                    << "specified port does not exist.";
 
-          auto storeOpPort = ports.getValue()[port.getValue()];
+          auto storeOpPort = ports.value()[port.value()];
           if (!helper::isMemrefWrPort(storeOpPort))
             return use.getOwner()->emitError()
                    << "specified port is not a write port.";
@@ -154,54 +154,54 @@ LogicalResult checkIndices(Location loc, OperandRange indices,
 }
 
 LogicalResult AllocaOp::verify() {
-  auto res = this->res();
-  auto ports = this->ports();
+  auto res = this->getRes();
+  auto ports = this->getPorts();
   for (auto &use : res.getUses()) {
     if (auto loadOp = dyn_cast<hir::LoadOp>(use.getOwner())) {
-      auto port = loadOp.port();
+      auto port = loadOp.getPort();
       if (!port)
         continue;
-      auto loadOpPort = ports[port.getValue()];
+      auto loadOpPort = ports[port.value()];
       if (!helper::isMemrefRdPort(loadOpPort))
         return use.getOwner()->emitError()
                << "specified port is not a read port.";
     } else if (auto storeOp = dyn_cast<hir::StoreOp>(use.getOwner())) {
-      auto port = storeOp.port();
+      auto port = storeOp.getPort();
       if (failed(checkIndices(
-              storeOp->getLoc(), storeOp.indices(),
-              storeOp.mem().getType().dyn_cast<hir::MemrefType>())))
+              storeOp->getLoc(), storeOp.getIndices(),
+              storeOp.getMem().getType().dyn_cast<hir::MemrefType>())))
         return failure();
       if (!port)
         continue;
-      if (ports.getValue().size() <= port.getValue())
+      if (ports.size() <= port.value())
         return use.getOwner()
                    ->emitError("Invalid port number.")
                    .attachNote(this->getLoc())
                << "Memref defined here.";
-      auto storeOpPort = ports.getValue()[port.getValue()];
+      auto storeOpPort = ports[port.value()];
       if (!helper::isMemrefWrPort(storeOpPort))
         return use.getOwner()->emitError()
                << "specified port is not a write port.";
     }
   }
-  if (this->mem_kind() == MemKindEnum::reg) {
-    if (this->res()
+  if (this->getMemKind() == MemKindEnum::reg) {
+    if (this->getRes()
             .getType()
             .dyn_cast<hir::MemrefType>()
             .getNumElementsPerBank() != 1)
       return this->emitError("'reg' must have all dims banked.");
-    if (this->ports().size() != 2)
+    if (this->getPorts().size() != 2)
       return this->emitError("'reg' must two ports, read and write.");
-    if (helper::isMemrefWrPort(this->ports()[0]))
+    if (helper::isMemrefWrPort(this->getPorts()[0]))
       return this->emitError("'reg' port 0 must be read-only.");
-    if (helper::isMemrefRdPort(this->ports()[1]))
+    if (helper::isMemrefRdPort(this->getPorts()[1]))
       return this->emitError("'reg' port 1 must be write-only.");
-    if (helper::getMemrefPortRdLatency(this->ports()[0]).getValue() != 0)
+    if (helper::getMemrefPortRdLatency(this->getPorts()[0]).value() != 0)
       return this->emitError("'reg' read latency must be 0.");
-    if (helper::getMemrefPortWrLatency(this->ports()[1]).getValue() != 1)
+    if (helper::getMemrefPortWrLatency(this->getPorts()[1]).value() != 1)
       return this->emitError("'reg' write latency must be 1.");
   } else {
-    if (this->res()
+    if (this->getRes()
             .getType()
             .dyn_cast<hir::MemrefType>()
             .getNumElementsPerBank() == 1)
@@ -223,7 +223,7 @@ LogicalResult BusTensorMapOp::verify() {
     return this->emitError(
         "Expected input and result types to be hir.bus_tensor type.");
 
-  for (auto operand : this->operands()) {
+  for (auto operand : this->getOperands()) {
     auto operandTy = operand.getType().dyn_cast_or_null<hir::BusTensorType>();
     if (!operandTy)
       return this->emitError(
@@ -233,7 +233,7 @@ LogicalResult BusTensorMapOp::verify() {
           "Expected all input and result tensors to have same shape.");
   }
 
-  for (auto result : this->results()) {
+  for (auto result : this->getResults()) {
     auto resultTy = result.getType().dyn_cast_or_null<hir::BusTensorType>();
     if (!resultTy)
       return this->emitError(
@@ -248,7 +248,7 @@ LogicalResult BusTensorMapOp::verify() {
 LogicalResult YieldOp::verify() {
   auto *operation = this->getOperation()->getParentRegion()->getParentOp();
   auto resultTypes = operation->getResultTypes();
-  auto operands = this->operands();
+  auto operands = this->getOperands();
   if (resultTypes.size() != operands.size())
     return this->emitError()
            << "Expected " << resultTypes.size() << " operands.";
@@ -260,7 +260,7 @@ LogicalResult YieldOp::verify() {
 }
 
 LogicalResult FuncExternOp::verify() {
-  auto funcTy = this->funcTy().dyn_cast<hir::FuncType>();
+  auto funcTy = this->getFuncTy().dyn_cast<hir::FuncType>();
   if (!funcTy)
     return this->emitError("OpVerifier failed. hir::FuncOp::funcTy must be of "
                            "type hir::FuncType.");
@@ -312,7 +312,7 @@ std::optional<std::string> typeMismatch(Location loc, hir::FuncType ta,
 
   // if (ta != tb)
   //  return std::string("Mismatch in FuncType.");
-  return llvm::None;
+  return std::nullopt;
 }
 
 bool isEqual(mlir::DictionaryAttr d1, mlir::DictionaryAttr d2) {
@@ -324,13 +324,13 @@ bool isEqual(mlir::DictionaryAttr d1, mlir::DictionaryAttr d2) {
 
   for (auto param : d1) {
     auto value = d2.get(param.getName());
-    if (!value || (value.getType() != param.getValue().getType()))
+    if (!value || (value != param.getValue()))
       return false;
   }
 
   for (auto param : d2) {
     auto value = d1.get(param.getName());
-    if (!value || (value.getType() != param.getValue().getType()))
+    if (!value || (value != param.getValue()))
       return false;
   }
 
@@ -358,7 +358,7 @@ LogicalResult CallOp::verify() {
     if (error)
       return this->emitError("Mismatch with function definition.")
                  .attachNote(funcOp.getLoc())
-             << error.getValue() << "\n\ntypes are \n"
+             << error.value() << "\n\ntypes are \n"
              << funcOp.getFuncType() << "\n and \n"
              << this->getFuncType();
   } else if (hir::FuncExternOp funcExternOp =
@@ -368,7 +368,7 @@ LogicalResult CallOp::verify() {
     if (error)
       return this->emitError("Mismatch with function declaration.")
                  .attachNote(funcExternOp.getLoc())
-             << error.getValue();
+             << error.value();
   }
   auto callOpParams =
       this->getOperation()->getAttrOfType<mlir::DictionaryAttr>("params");
@@ -381,11 +381,11 @@ LogicalResult CallOp::verify() {
 }
 
 LogicalResult CastOp::verify() {
-  if (this->input().getType().isa<mlir::IndexType>() &&
-      this->res().getType().isa<mlir::IntegerType>())
+  if (this->getInput().getType().isa<mlir::IndexType>() &&
+      this->getRes().getType().isa<mlir::IntegerType>())
     return success();
-  auto inputHWType = helper::convertToHWType(this->input().getType());
-  auto resultHWType = helper::convertToHWType(this->res().getType());
+  auto inputHWType = helper::convertToHWType(this->getInput().getType());
+  auto resultHWType = helper::convertToHWType(this->getRes().getType());
   if (!inputHWType)
     return this->emitError()
            << "Input type should be convertible to a valid hardware type.";
@@ -399,18 +399,18 @@ LogicalResult CastOp::verify() {
 }
 
 LogicalResult DelayOp::verify() {
-  Type inputTy = this->input().getType();
+  Type inputTy = this->getInput().getType();
   if (helper::isBuiltinSizedType(inputTy) || helper::isBusLikeType(inputTy))
     return success();
   return this->emitError("hir.delay op only supports signless-integer, float "
                          "and tuple/tensor of these types.");
-  if (this->delay() < 0) {
+  if (this->getDelay() < 0) {
     return this->emitError("Delay can not be negative.");
   }
 }
 
 LogicalResult ForOp::verify() {
-  if (failed(verifyTimeAndOffset(this->tstart(), this->offset())))
+  if (failed(verifyTimeAndOffset(this->getTstart(), this->getOffset())))
     return this->emitError("Invalid offset.");
   auto ivTy = this->getInductionVar().getType();
   if (this->getOperation()->getAttr("unroll"))
@@ -420,13 +420,13 @@ LogicalResult ForOp::verify() {
   if (!ivTy.isIntOrIndex())
     return this->emitError(
         "Expected induction var to be IntegerType or IndexType.");
-  if (this->lb().getType() != ivTy)
+  if (this->getLb().getType() != ivTy)
     return this->emitError("Expected lower bound to be of type ")
            << ivTy << ".";
-  if (this->ub().getType() != ivTy)
+  if (this->getUb().getType() != ivTy)
     return this->emitError("Expected upper bound to be of type ")
            << ivTy << ".";
-  if (this->step().getType() != ivTy)
+  if (this->getStep().getType() != ivTy)
     return this->emitError("Expected step size to be of type ") << ivTy << ".";
   if (this->getInductionVar().getType() != ivTy)
     return this->emitError("Expected induction var to be of type ")
@@ -435,7 +435,7 @@ LogicalResult ForOp::verify() {
     return this->emitError("Expected time var to be of !hir.time type.");
   auto nextIterOp =
       dyn_cast<hir::NextIterOp>(this->getLoopBody().front().getTerminator());
-  if (nextIterOp.iter_args().size() != this->iter_args().size())
+  if (nextIterOp.getIterArgs().size() != this->getIterArgs().size())
     return nextIterOp.emitError(
         "Mismatch in number of iter args with the enclosing ForOp.");
   if (failed(checkRegionCaptures(this->getLoopBody())))
@@ -445,27 +445,28 @@ LogicalResult ForOp::verify() {
 }
 
 LogicalResult LoadOp::verify() {
-  if (failed(verifyTimeAndOffset(this->tstart(), this->offset())))
+  if (failed(verifyTimeAndOffset(this->getTstart(), this->getOffset())))
     return this->emitError("Invalid offset.");
   return success();
 }
 LogicalResult StoreOp::verify() {
-  if (failed(verifyTimeAndOffset(this->tstart(), this->offset())))
+  if (failed(verifyTimeAndOffset(this->getTstart(), this->getOffset())))
     return this->emitError("Invalid offset.");
   return success();
 }
 
 LogicalResult IfOp::verify() {
-  if (failed(verifyTimeAndOffset(this->tstart(), this->offset())))
+  if (failed(verifyTimeAndOffset(this->getTstart(), this->getOffset())))
     return this->emitError("Invalid offset.");
-  if (failed(checkRegionCaptures(this->if_region())))
+  if (failed(checkRegionCaptures(this->getIfRegion())))
     return failure();
-  if (failed(checkRegionCaptures(this->else_region())))
+  if (failed(checkRegionCaptures(this->getElseRegion())))
     return failure();
   return success();
 }
 LogicalResult NextIterOp::verify() {
-  if (this->condition() && isa<hir::ForOp>(this->getOperation()->getParentOp()))
+  if (this->getCondition() &&
+      isa<hir::ForOp>(this->getOperation()->getParentOp()))
     return this->emitError(
         "condition is not supported in hir.next_iter when it "
         "is inside a hir.for op.");
@@ -473,26 +474,26 @@ LogicalResult NextIterOp::verify() {
 }
 
 LogicalResult ProbeOp::verify() {
-  auto ty = this->input().getType();
+  auto ty = this->getInput().getType();
   if (!(helper::isBuiltinSizedType(ty) || ty.isa<hir::TimeType>() ||
         helper::isBusLikeType(ty)))
     return this->emitError() << "Unsupported type for hir.probe.";
-  if (this->verilog_name().size() == 0 ||
-      this->verilog_name().startswith("%") ||
-      isdigit(this->verilog_name().data()[0]))
+  if (this->getVerilogName().empty() ||
+      this->getVerilogName().startswith("%") ||
+      isdigit(this->getVerilogName().data()[0]))
     return this->emitError() << "Invalid name.";
   return success();
 }
 
 LogicalResult BusTensorInsertElementOp::verify() {
-  auto busTensorTy = this->tensor().getType().dyn_cast<hir::BusTensorType>();
+  auto busTensorTy = this->getTensor().getType().dyn_cast<hir::BusTensorType>();
   if (!busTensorTy)
     return this->emitError()
-           << "Expected BusTensorType, got " << this->tensor().getType();
-  auto busTy = this->element().getType().dyn_cast<hir::BusType>();
+           << "Expected BusTensorType, got " << this->getTensor().getType();
+  auto busTy = this->getElement().getType().dyn_cast<hir::BusType>();
   if (!busTy)
     return this->emitError()
-           << "Expected BusType, got " << this->element().getType();
+           << "Expected BusType, got " << this->getElement().getType();
   if (busTy.getElementType() != busTensorTy.getElementType())
     return this->emitError() << "Incompatible input types";
   return success();

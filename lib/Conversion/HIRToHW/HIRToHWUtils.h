@@ -2,19 +2,22 @@
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "circt/Dialect/HIR/IR/helper.h"
+#include "circt/Dialect/HW/HWOpInterfaces.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/SV/SVOps.h"
+#include <mlir/IR/IRMapping.h>
 
 using namespace circt;
 
 class FuncToHWModulePortMap {
 public:
-  void addFuncInput(StringAttr name, hw::PortDirection direction, Type type);
+  void addFuncInput(StringAttr name, hw::PortInfo::Direction direction,
+                    Type type);
   void addFuncResult(StringAttr name, Type type);
   void addClk(OpBuilder &);
   void addReset(OpBuilder &);
   ArrayRef<hw::PortInfo> getPortInfoList();
-  const hw::PortInfo getPortInfoForFuncInput(size_t inputArgNum);
+  hw::PortInfo getPortInfoForFuncInput(size_t inputArgNum);
 
 private:
   size_t hwModuleInputArgNum = 0;
@@ -26,7 +29,7 @@ private:
 bool isRecvBus(DictionaryAttr busAttr);
 
 std::pair<SmallVector<Value>, SmallVector<Value>>
-filterCallOpArgs(hir::FuncType funcTy, OperandRange args);
+filterCallOpArgs(hir::FuncType funcTy, SmallVector<Value, 4> args);
 
 FuncToHWModulePortMap getHWModulePortMap(OpBuilder &builder,
                                          mlir::Location errorLoc,
@@ -42,12 +45,12 @@ getConstantXArray(OpBuilder &builder, Type hwTy,
 ArrayAttr getHWParams(Attribute, bool ignoreValues = false);
 
 Value getDelayedValue(OpBuilder &builder, Value input, int64_t delay,
-                      Optional<StringRef> name, Location loc, Value clk,
+                      std::optional<StringRef> name, Location loc, Value clk,
                       Value reset);
 
 Value convertToNamedValue(OpBuilder &builder, StringRef name, Value val);
-Value convertToOptionalNamedValue(OpBuilder &builder, Optional<StringRef> name,
-                                  Value val);
+Value convertToOptionalNamedValue(OpBuilder &builder,
+                                  std::optional<StringRef> name, Value val);
 SmallVector<Value> insertBusMapLogic(OpBuilder &builder, Block &bodyBlock,
                                      ArrayRef<Value> operands);
 
@@ -77,8 +80,8 @@ public:
     mapHIRToHWValue[hirValue] = hwValue;
   }
 
-  BlockAndValueMapping getBlockAndValueMapping() {
-    BlockAndValueMapping blockAndValueMap;
+  IRMapping getBlockAndValueMapping() {
+    IRMapping blockAndValueMap;
     for (auto keyValue : mapHIRToHWValue) {
       blockAndValueMap.map(keyValue.getFirst(), keyValue.getSecond());
     }

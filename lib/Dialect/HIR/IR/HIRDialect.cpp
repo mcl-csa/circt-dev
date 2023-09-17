@@ -10,7 +10,7 @@
 
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWOps.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/Types.h"
@@ -47,13 +47,11 @@ struct HIRInlinerInterface : public mlir::DialectInlinerInterface {
   /// This hook checks to see if the given operation is legal to inline into the
   /// given region. For Toy this hook can simply return true, as all Toy
   /// operations are inlinable.
-  bool isLegalToInline(Operation *, Region *, bool,
-                       BlockAndValueMapping &) const final {
+  bool isLegalToInline(Operation *, Region *, bool, IRMapping &) const final {
     return true;
   }
 
-  bool isLegalToInline(Region *, Region *src, bool,
-                       BlockAndValueMapping &) const final {
+  bool isLegalToInline(Region *, Region *src, bool, IRMapping &) const final {
     return true;
   }
   void handleTerminator(Operation *op,
@@ -63,8 +61,8 @@ struct HIRInlinerInterface : public mlir::DialectInlinerInterface {
     assert(returnOp);
 
     // Replace the values directly with the return operands.
-    assert(returnOp.operands().size() == valuesToRepl.size());
-    for (const auto &it : llvm::enumerate(returnOp.operands()))
+    assert(returnOp.getOperands().size() == valuesToRepl.size());
+    for (const auto &it : llvm::enumerate(returnOp.getOperands()))
       valuesToRepl[it.index()].replaceAllUsesWith(it.value());
   }
 };
@@ -101,7 +99,7 @@ void HIRDialect::initialize() {
 
 Operation *HIRDialect::materializeConstant(OpBuilder &builder, Attribute value,
                                            Type type, Location loc) {
-  if (value.getType().isa<IntegerType>())
+  if (value.isa<IntegerAttr>())
     return builder.create<hw::ConstantOp>(loc, type,
                                           value.dyn_cast<IntegerAttr>());
   // For index type.

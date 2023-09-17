@@ -120,7 +120,7 @@ HIRValue ValueConverter::getDelayedBlockLocalValue(OpBuilder &builder,
   auto blkLocalValue = getBlockLocalValue(builder, mlirValue, blk);
   return getDelayedValue(builder, mlirValue.getLoc(), blkLocalValue, timeVar,
                          offset)
-      .getValue();
+      .value();
 }
 
 Value ValueConverter::getMemref(Value mlirMemRef) {
@@ -162,11 +162,11 @@ void ValueConverter::mapMemref(Value mlirMemRef, Value hirMemref) {
   mapMemrefToHIR[mlirMemRef] = hirMemref;
 }
 
-Optional<HIRValue> ValueConverter::getDelayedValue(OpBuilder &builder,
-                                                   Location errLoc,
-                                                   HIRValue hirValue,
-                                                   Value destTimeVar,
-                                                   int64_t destOffset) {
+std::optional<HIRValue> ValueConverter::getDelayedValue(OpBuilder &builder,
+                                                        Location errLoc,
+                                                        HIRValue hirValue,
+                                                        Value destTimeVar,
+                                                        int64_t destOffset) {
   assert(hirValue.getValue());
   assert(!hirValue.isContainerType());
 

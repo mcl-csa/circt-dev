@@ -1,5 +1,6 @@
 #include "circt/Dialect/HIR/IR/HIROpSyntax.h"
 #include "circt/Dialect/HIR/IR/helper.h"
+#include <mlir/IR/FunctionImplementation.h>
 #define min(x, y) x > y ? x : y
 //------------------------------------------------------------------------------
 //---------------------------- Helper functions --------------------------------
@@ -173,7 +174,7 @@ ParseResult parseOptionalArrayAccess(
     auto *context = parser.getBuilder().getContext();
     OpAsmParser::UnresolvedOperand var;
     mlir::OptionalParseResult result = parser.parseOptionalInteger(val);
-    if (result.hasValue() && !result.getValue()) {
+    if (result.value() && !result.value()) {
       tempConstAddrs.push_back(helper::getI64IntegerAttr(context, val));
     } else if (!parser.parseOperand(var)) {
       varAddrs.push_back(var);
@@ -517,26 +518,26 @@ ParseResult IfOp::parse(OpAsmParser &parser, OperationState &result) {
 
 void IfOp::print(OpAsmPrinter &printer) {
 
-  printer << " " << this->condition();
+  printer << " " << this->getCondition();
 
-  printer << " at time(" << this->if_region().getArgument(0) << " = ";
-  printTimeAndOffset(printer, this->getOperation(), this->tstart(),
-                     this->offsetAttr());
+  printer << " at time(" << this->getIfRegion().getArgument(0) << " = ";
+  printTimeAndOffset(printer, this->getOperation(), this->getTstart(),
+                     this->getOffsetAttr());
   printer << ")";
 
-  if (this->results().size() > 0) {
+  if (!this->getResults().empty()) {
     printer << " -> (";
     printTypeAndDelayList(printer, this->getResultTypes(),
-                          this->result_attrs().getValue());
+                          this->getResultAttrs().value());
     printer << ")";
   }
 
-  printer.printRegion(this->if_region(),
+  printer.printRegion(this->getIfRegion(),
                       /*printEntryBlockArgs=*/false,
                       /*printBlockTerminators=*/true);
 
   printer << "else";
-  printer.printRegion(this->else_region(), false, true);
+  printer.printRegion(this->getElseRegion(), false, true);
   printWithSSANames(printer, this->getOperation(),
                     this->getOperation()->getAttrDictionary());
 }
@@ -598,13 +599,13 @@ ParseResult WhileOp::parse(OpAsmParser &parser, OperationState &result) {
 }
 
 void WhileOp::print(OpAsmPrinter &printer) {
-  printer << " " << this->condition();
+  printer << " " << this->getCondition();
   printOptionalIterArgs(
-      printer, this->iter_args(), this->body().front().getArguments(),
+      printer, this->getIterArgs(), this->getBody().front().getArguments(),
       this->getOperation()->getAttrOfType<ArrayAttr>("iter_arg_delays"));
   printer << " iter_time(" << this->getIterTimeVar() << " = ";
-  printTimeAndOffset(printer, this->getOperation(), this->tstart(),
-                     this->offsetAttr());
+  printTimeAndOffset(printer, this->getOperation(), this->getTstart(),
+                     this->getOffsetAttr());
   printer << ")";
   printer.printRegion(this->getOperation()->getRegion(0),
                       /*printEntryBlockArgs=*/false,
@@ -702,15 +703,15 @@ ParseResult ForOp::parse(OpAsmParser &parser, OperationState &result) {
 }
 void ForOp::print(OpAsmPrinter &printer) {
   printer << " " << this->getInductionVar() << " : "
-          << this->getInductionVar().getType() << " = " << this->lb() << " to "
-          << this->ub() << " step " << this->step();
+          << this->getInductionVar().getType() << " = " << this->getLb()
+          << " to " << this->getUb() << " step " << this->getStep();
   printOptionalIterArgs(
-      printer, this->iter_args(), this->body().front().getArguments(),
+      printer, this->getIterArgs(), this->getBody().front().getArguments(),
       this->getOperation()->getAttrOfType<ArrayAttr>("iter_arg_delays"));
 
   printer << " iter_time( " << this->getIterTimeVar() << " = ";
-  printTimeAndOffset(printer, this->getOperation(), this->tstart(),
-                     this->offsetAttr());
+  printTimeAndOffset(printer, this->getOperation(), this->getTstart(),
+                     this->getOffsetAttr());
   printer << ")";
 
   printer.printRegion(this->getOperation()->getRegion(0),
@@ -721,7 +722,7 @@ void ForOp::print(OpAsmPrinter &printer) {
                     this->getOperation()->getAttrDictionary());
 }
 
-Region &ForOp::getLoopBody() { return body(); }
+Region &ForOp::getLoopBody() { return getBody(); }
 
 /// FuncOp
 /// Example:
@@ -786,80 +787,82 @@ parseFuncSignature(OpAsmParser &parser, hir::FuncType &funcTy,
   return success();
 }
 
-ParseResult parseFuncDecl(OpAsmParser &parser, OperationState &result,
-                          SmallVectorImpl<OpAsmParser::Argument> &entryArgs,
-                          hir::FuncType &funcTy) {
+ParseResult parseFuncDecl(OpAsmParser &parser, OperationState &state,
+                          hir::FuncType &funcTy,
+                          SmallVectorImpl<OpAsmParser::Argument> &args) {
 
-  SmallVector<OpAsmParser::Argument, 4> resultArgs;
+  SmallVector<DictionaryAttr> argAttrs;
+  SmallVector<OpAsmParser::Argument, 4> results;
   OpAsmParser::Argument tstart;
   auto &builder = parser.getBuilder();
   // Parse the name as a symbol.
   StringAttr functionName;
   if (parser.parseSymbolName(functionName, SymbolTable::getSymbolAttrName(),
-                             result.attributes))
+                             state.attributes))
     return failure();
   // Parse tstart.
   if (parser.parseKeyword("at") || parser.parseArgument(tstart))
     return failure();
   tstart.type = TimeType::get(parser.getContext());
   //  Parse the function signature.
-  if (parseFuncSignature(parser, funcTy, entryArgs, resultArgs))
+  if (parseFuncSignature(parser, funcTy, args, results))
     return failure();
-  entryArgs.push_back(tstart);
+  args.push_back(tstart);
 
-  result.addAttribute("funcTy", TypeAttr::get(funcTy));
+  state.addAttribute("funcTy", TypeAttr::get(funcTy));
 
   // Add the attributes for FunctionLike interface.
   auto functionTy = funcTy.getFunctionType();
-  result.addAttribute(mlir::function_interface_impl::getTypeAttrName(),
-                      TypeAttr::get(functionTy));
+  state.addAttribute("function_type", TypeAttr::get(functionTy));
 
-  SmallVector<DictionaryAttr> argAttrs;
   for (DictionaryAttr attr : funcTy.getInputAttrs()) {
     argAttrs.push_back(attr);
   };
+  // For tstart.
   argAttrs.push_back(builder.getDictionaryAttr(SmallVector<NamedAttribute>()));
-  mlir::function_interface_impl::addArgAndResultAttrs(builder, result, argAttrs,
-                                                      funcTy.getResultAttrs());
-
+  mlir::function_interface_impl::addArgAndResultAttrs(
+      builder, state, argAttrs, funcTy.getResultAttrs(),
+      builder.getStringAttr("arg_attrs"),
+      builder.getStringAttr("result_attrs"));
   return success();
 }
 
-ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
-  SmallVector<OpAsmParser::Argument, 4> entryArgs;
+ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &state) {
+  SmallVector<OpAsmParser::Argument, 4> args;
   hir::FuncType funcTy;
 
   auto &builder = parser.getBuilder();
 
-  if (parseFuncDecl(parser, result, entryArgs, funcTy))
+  if (parseFuncDecl(parser, state, funcTy, args))
     return failure();
 
   // Parse the function body.
-  auto *body = result.addRegion();
+  auto *body = state.addRegion();
   SmallVector<Type> entryArgTypes;
   auto functionTy = funcTy.getFunctionType();
   for (auto ty : functionTy.getInputs()) {
     entryArgTypes.push_back(ty);
   }
 
-  if (parser.parseRegion(*body, entryArgs))
+  if (parser.parseRegion(*body, args))
     return failure();
 
-  if (failed(parser.parseOptionalAttrDict(result.attributes)))
+  if (failed(parser.parseOptionalAttrDict(state.attributes)))
     return failure();
+  ;
+  FuncOp::ensureTerminator(*body, builder, state.location);
 
-  FuncOp::ensureTerminator(*body, builder, result.location);
   return success();
 }
 
-ParseResult FuncExternOp::parse(OpAsmParser &parser, OperationState &result) {
+ParseResult FuncExternOp::parse(OpAsmParser &parser, OperationState &state) {
 
-  SmallVector<OpAsmParser::Argument, 4> entryArgs;
+  SmallVector<OpAsmParser::Argument, 4> args;
   hir::FuncType funcTy;
-  if (parseFuncDecl(parser, result, entryArgs, funcTy))
+  if (parseFuncDecl(parser, state, funcTy, args))
     return failure();
   // Parse the function body.
-  auto *body = result.addRegion();
+  auto *body = state.addRegion();
   SmallVector<Type> entryArgTypes;
   auto functionTy = funcTy.getFunctionType();
   for (auto ty : functionTy.getInputs()) {
@@ -870,9 +873,9 @@ ParseResult FuncExternOp::parse(OpAsmParser &parser, OperationState &result) {
   body->front().addArguments(
       entryArgTypes,
       SmallVector<Location>(entryArgTypes.size(), builder.getUnknownLoc()));
-  if (failed(parser.parseOptionalAttrDict(result.attributes)))
+  if (failed(parser.parseOptionalAttrDict(state.attributes)))
     return failure();
-  FuncExternOp::ensureTerminator(*body, builder, result.location);
+  FuncExternOp::ensureTerminator(*body, builder, state.location);
   return success();
 }
 
@@ -945,10 +948,10 @@ void FuncExternOp::print(OpAsmPrinter &printer) {
   // Print function name, signature, and control.
   auto args = this->getRegion().front().getArguments();
   printer << " ";
-  printer.printSymbolName(this->sym_name());
+  printer.printSymbolName(this->getSymName());
   printer << " at " << args.back() << " ";
   printFuncSignature(printer, this->getFuncType(), args,
-                     this->resultNames().value_or(ArrayAttr()));
+                     this->getResultNames().value_or(ArrayAttr()));
   printer.printOptionalAttrDict(
       this->getOperation()->getAttrs(),
       {"funcTy", "function_type", "arg_attrs", "res_attrs", "sym_name"});
@@ -957,7 +960,7 @@ void FuncExternOp::print(OpAsmPrinter &printer) {
 void FuncOp::print(OpAsmPrinter &printer) {
   // Print function name, signature, and control.
   printer << " ";
-  printer.printSymbolName(this->sym_name());
+  printer.printSymbolName(this->getSymName());
   Region &body = this->getOperation()->getRegion(0);
   printer << " at "
           << body.front().getArgument(body.front().getNumArguments() - 1)
@@ -965,7 +968,7 @@ void FuncOp::print(OpAsmPrinter &printer) {
 
   printFuncSignature(printer, this->getFuncType(),
                      this->getRegion().front().getArguments(),
-                     this->resultNames().value_or(ArrayAttr()));
+                     this->getResultNames().value_or(ArrayAttr()));
 
   printer.printRegion(body, /*printEntryBlockArgs=*/false,
                       /*printBlockTerminators=*/true);
@@ -1012,14 +1015,14 @@ ParseResult BusTensorInsertElementOp::parse(OpAsmParser &parser,
 }
 
 void BusTensorInsertElementOp::print(OpAsmPrinter &printer) {
-  printer << " " << this->element() << " into " << this->tensor();
+  printer << " " << this->getElement() << " into " << this->getTensor();
   printer << "[";
-  printer.printOperands(this->indices());
+  printer.printOperands(this->getIndices());
   printer << "]";
   printWithSSANames(printer, this->getOperation(),
                     this->getOperation()->getAttrDictionary());
   printer << " : ";
-  printer << this->res().getType();
+  printer << this->getRes().getType();
 }
 
 /// BusMapOp parser and printer
@@ -1070,14 +1073,14 @@ void BusMapOp::print(OpAsmPrinter &printer) {
   for (size_t i = 0; i < this->getNumOperands(); i++) {
     if (i > 0)
       printer << ",";
-    printer << this->body().front().getArgument(i) << " = "
-            << this->operands()[i];
+    printer << this->getBody().front().getArgument(i) << " = "
+            << this->getOperands()[i];
   }
   printer << ") : (";
   for (size_t i = 0; i < this->getNumOperands(); i++) {
     if (i > 0)
       printer << ",";
-    printer << this->operands()[i].getType();
+    printer << this->getOperands()[i].getType();
   }
   printer << ") -> (";
   for (size_t i = 0; i < this->getNumResults(); i++) {
@@ -1087,7 +1090,7 @@ void BusMapOp::print(OpAsmPrinter &printer) {
     printer << result.getType();
   }
   printer << ")";
-  printer.printRegion(this->body(), false, true);
+  printer.printRegion(this->getBody(), false, true);
 }
 
 /// BusTensorMapOp parser and printer
@@ -1139,14 +1142,14 @@ void BusTensorMapOp::print(OpAsmPrinter &printer) {
   for (size_t i = 0; i < this->getNumOperands(); i++) {
     if (i > 0)
       printer << ",";
-    printer << this->body().front().getArgument(i) << " = "
-            << this->operands()[i];
+    printer << this->getBody().front().getArgument(i) << " = "
+            << this->getOperands()[i];
   }
   printer << ") : (";
   for (size_t i = 0; i < this->getNumOperands(); i++) {
     if (i > 0)
       printer << ",";
-    printer << this->operands()[i].getType();
+    printer << this->getOperands()[i].getType();
   }
   printer << ") -> (";
   for (size_t i = 0; i < this->getNumResults(); i++) {
@@ -1156,16 +1159,14 @@ void BusTensorMapOp::print(OpAsmPrinter &printer) {
     printer << result.getType();
   }
   printer << ")";
-  printer.printRegion(this->body(), false, true);
+  printer.printRegion(this->getBody(), false, true);
 }
 
 LogicalResult hir::FuncExternOp::verifyType() { return success(); }
 
 LogicalResult hir::FuncOp::verifyType() {
-
-  auto type = this->function_typeAttr().getValue();
+  auto type = this->getFunctionTypeAttr().getValue();
   if (!type.isa<FunctionType>())
-    return emitOpError("requires '" + getTypeAttrName() +
-                       "' attribute of function type");
+    return emitOpError("Requires 'function_type' attribute of function type");
   return success();
 }

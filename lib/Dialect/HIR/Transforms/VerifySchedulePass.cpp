@@ -49,7 +49,7 @@ LogicalResult VerifySchedulePass::verifyOperation(Operation *operation) {
   if (isa<comb::CombDialect>(operation->getDialect()))
     return verifyCombOp(operation);
   if (auto op = dyn_cast<hir::ScheduledOp>(operation))
-    return verifyOp(operation);
+    return verifyOp(op);
   return success();
 }
 

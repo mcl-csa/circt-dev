@@ -17,29 +17,29 @@ using namespace hir;
 // Helper functions.
 //------------------------------------------------------------------------------
 
-static Optional<DictionaryAttr> parseDelayAttr(AsmParser &parser) {
+static std::optional<DictionaryAttr> parseDelayAttr(AsmParser &parser) {
   IntegerAttr delayAttr;
   auto *context = parser.getBuilder().getContext();
   if (succeeded(parser.parseOptionalKeyword("delay"))) {
     if (parser.parseAttribute(delayAttr, IntegerType::get(context, 64)))
-      return llvm::None;
+      return std::nullopt;
   } else {
     delayAttr = helper::getI64IntegerAttr(parser.getContext(), 0);
   }
   return helper::getDictionaryAttr("hir.delay", delayAttr);
 }
 
-static Optional<DictionaryAttr> parseMemrefPortsAttr(AsmParser &parser) {
+static std::optional<DictionaryAttr> parseMemrefPortsAttr(AsmParser &parser) {
   ArrayAttr memrefPortsAttr;
   if (parser.parseKeyword("ports") || parser.parseAttribute(memrefPortsAttr))
-    return llvm::None;
+    return std::nullopt;
   return helper::getDictionaryAttr("hir.memref.ports", memrefPortsAttr);
 }
 
-static Optional<DictionaryAttr> parseBusPortsAttr(AsmParser &parser) {
+static std::optional<DictionaryAttr> parseBusPortsAttr(AsmParser &parser) {
 
   if (parser.parseKeyword("ports") || parser.parseLSquare())
-    return llvm::None;
+    return std::nullopt;
   StringRef keyword;
   if (succeeded(parser.parseOptionalKeyword("send")))
     keyword = "send";
@@ -48,11 +48,11 @@ static Optional<DictionaryAttr> parseBusPortsAttr(AsmParser &parser) {
   else {
     parser.emitError(parser.getCurrentLocation())
         << "Expected 'send' or 'recv' keyword.";
-    return llvm::None;
+    return std::nullopt;
   }
 
   if (parser.parseRSquare())
-    return llvm::None;
+    return std::nullopt;
 
   return helper::getDictionaryAttr(
       "hir.bus.ports", ArrayAttr::get(parser.getContext(),
@@ -60,7 +60,8 @@ static Optional<DictionaryAttr> parseBusPortsAttr(AsmParser &parser) {
                                           parser.getContext(), keyword)})));
 }
 
-static Optional<DictionaryAttr> parseArgAttr(AsmParser &parser, Type type) {
+static std::optional<DictionaryAttr> parseArgAttr(AsmParser &parser,
+                                                  Type type) {
   if (helper::isBuiltinSizedType(type))
     return parseDelayAttr(parser);
 
@@ -89,17 +90,12 @@ void printArgAttr(AsmPrinter &printer, DictionaryAttr attr, Type type) {
 //-------------------------ASSEMBLY-FORMAT Custom Parser/Printer-------------//
 //---------------------------------------------------------------------------//
 
-ParseResult
-parseTypedArgList(AsmParser &parser, FailureOr<SmallVector<Type>> &argTypes,
-                  FailureOr<SmallVector<DictionaryAttr>> &argAttrs) {
-  SmallVector<Type> argTypesStorage;
-  SmallVector<DictionaryAttr> argAttrsStorage;
+ParseResult parseTypedArgList(AsmParser &parser, SmallVector<Type> &argTypes,
+                              SmallVector<DictionaryAttr> &argAttrs) {
   if (parser.parseLParen())
     return failure();
 
   if (succeeded(parser.parseOptionalRParen())) {
-    argTypes = argTypesStorage;
-    argAttrs = argAttrsStorage;
     return success();
   }
 
@@ -107,17 +103,15 @@ parseTypedArgList(AsmParser &parser, FailureOr<SmallVector<Type>> &argTypes,
     Type type;
     if (parser.parseType(type))
       return failure();
-    argTypesStorage.push_back(type);
+    argTypes.push_back(type);
     auto inputAttr = parseArgAttr(parser, type);
-    if (!inputAttr.hasValue())
+    if (!inputAttr)
       return failure();
-    argAttrsStorage.push_back(*inputAttr);
+    argAttrs.push_back(*inputAttr);
   } while (succeeded(parser.parseOptionalComma()));
 
   if (parser.parseRParen())
     return failure();
-  argTypes = argTypesStorage;
-  argAttrs = argAttrsStorage;
   return success();
 }
 
@@ -134,23 +128,20 @@ void printTypedArgList(AsmPrinter &printer, ArrayRef<Type> argTypes,
   printer << ")";
 }
 
-ParseResult
-parseBankedDimensionList(AsmParser &parser,
-                         mlir::FailureOr<SmallVector<int64_t>> &shape,
-                         mlir::FailureOr<SmallVector<hir::DimKind>> &dimKinds) {
-  SmallVector<int64_t> shapeStorage;
-  SmallVector<DimKind> dimKindsStorage;
+ParseResult parseBankedDimensionList(AsmParser &parser,
+                                     SmallVector<int64_t> &shape,
+                                     SmallVector<hir::DimKind> &dimKinds) {
   while (true) {
     int dimSize;
     // try to parse an ADDR dimension.
     mlir::OptionalParseResult result = parser.parseOptionalInteger(dimSize);
-    if (result.hasValue()) {
-      if (failed(result.getValue()))
+    if (result.has_value()) {
+      if (failed(result.value()))
         return failure();
       if (parser.parseXInDimensionList())
         return failure();
-      shapeStorage.push_back(dimSize);
-      dimKindsStorage.push_back(ADDR);
+      shape.push_back(dimSize);
+      dimKinds.push_back(ADDR);
       continue;
     }
 
@@ -161,16 +152,14 @@ parseBankedDimensionList(AsmParser &parser,
         return failure();
       if (parser.parseXInDimensionList())
         return failure();
-      shapeStorage.push_back(dimSize);
-      dimKindsStorage.push_back(BANK);
+      shape.push_back(dimSize);
+      dimKinds.push_back(BANK);
       continue;
     }
 
     // else the dimension list is over.
     break;
   }
-  shape = shapeStorage;
-  dimKinds = dimKindsStorage;
   return success();
 }
 
@@ -186,12 +175,9 @@ void printBankedDimensionList(AsmPrinter &printer, ArrayRef<int64_t> shape,
   }
 }
 
-ParseResult parseDimensionList(AsmParser &parser,
-                               FailureOr<SmallVector<int64_t>> &shape) {
-  SmallVector<int64_t> shapeVec;
-  if (parser.parseDimensionList(shapeVec))
+ParseResult parseDimensionList(AsmParser &parser, SmallVector<int64_t> &shape) {
+  if (parser.parseDimensionList(shape))
     return failure();
-  shape = shapeVec;
   return success();
 }
 

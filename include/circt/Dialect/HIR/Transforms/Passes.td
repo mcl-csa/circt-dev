@@ -14,7 +14,7 @@ def OptBitWidth : Pass<"hir-opt-bitwidth", "hir::FuncOp"> {
   let description = [{This pass reduces bitwidth of various ops.}];
 
   let constructor = "circt::hir::createOptBitWidthPass()";
-  let dependentDialects = ["hir::HIRDialect","mlir::arith::ArithmeticDialect"];
+  let dependentDialects = ["hir::HIRDialect","mlir::arith::ArithDialect"];
 }
 
 def OpFusion : Pass<"hir-fuse-op", "hir::FuncOp"> {
@@ -37,14 +37,14 @@ def OptTime : Pass<"hir-opt-time", "hir::FuncOp"> {
   let description = [{This pass reduces time offset related shift register usage.}];
 
   let constructor = "circt::hir::createOptTimePass()";
-  let dependentDialects = ["hir::HIRDialect","mlir::arith::ArithmeticDialect"];
+  let dependentDialects = ["hir::HIRDialect","mlir::arith::ArithDialect"];
 }
 
 def SimplifyCtrl : Pass<"hir-simplify-ctrl", "hir::FuncOp"> {
   let summary = "Simplifies ForOp and IfOp.";
 
   let constructor = "circt::hir::createSimplifyCtrlPass()";
-  let dependentDialects = ["circt::hw::HWDialect","circt::sv::SVDialect","circt::comb::CombDialect","mlir::arith::ArithmeticDialect"];
+  let dependentDialects = ["circt::hw::HWDialect","circt::sv::SVDialect","circt::comb::CombDialect","mlir::arith::ArithDialect"];
 }
 
 def MemrefLowering : Pass<"hir-lower-memref", "mlir::ModuleOp"> {
@@ -52,7 +52,7 @@ def MemrefLowering : Pass<"hir-lower-memref", "mlir::ModuleOp"> {
   let description = [{This pass lowers hir.memref to hir.bus for codegen.}];
 
   let constructor = "circt::hir::createMemrefLoweringPass()";
-  let dependentDialects = ["mlir::arith::ArithmeticDialect",
+  let dependentDialects = ["mlir::arith::ArithDialect",
   "circt::hw::HWDialect","circt::comb::CombDialect","hir::HIRDialect"];
 }
 
@@ -72,6 +72,6 @@ def LoopUnroll : Pass<"hir-loop-unroll", "hir::FuncOp"> {
   }];
 
   let constructor = "circt::hir::createLoopUnrollPass()";
-  let dependentDialects = ["mlir::arith::ArithmeticDialect"];
+  let dependentDialects = ["mlir::arith::ArithDialect"];
 }
 #endif // CIRCT_DIALECT_HIR_TRANSFORMS_PASSES

@@ -6,11 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "circt/Conversion/AutoAffineToHIRPass.h"
 #include "../PassDetail.h"
 #include "circt/Conversion/AffineToHIR.h"
-#include "circt/Conversion/AutoAffineToHIRPass.h"
 #include "circt/Dialect/Comb/CombOps.h"
-//#include "circt/Dialect/HIR/Analysis/OpFusionAnalysis.h"
+// #include "circt/Dialect/HIR/Analysis/OpFusionAnalysis.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "circt/Dialect/HIR/IR/helper.h"
@@ -22,7 +22,7 @@
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
 #include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"

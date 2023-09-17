@@ -3,11 +3,11 @@
 
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/PatternMatch.h"
+#include <mlir/Dialect/Arith/IR/Arith.h>
 
 namespace helper {
 // Templates.
@@ -53,7 +53,7 @@ bool isMemrefRdPort(mlir::Attribute port);
 llvm::StringRef extractBusPortFromDict(mlir::DictionaryAttr dict);
 llvm::StringRef getInlineAttrName();
 void eraseOps(mlir::SmallVectorImpl<mlir::Operation *> &opsToErase);
-mlir::Value lookupOrOriginal(mlir::BlockAndValueMapping &mapper,
+mlir::Value lookupOrOriginal(mlir::IRMapping &mapper,
                              mlir::Value originalValue);
 void setNames(mlir::Operation *, mlir::ArrayRef<mlir::StringRef>);
 

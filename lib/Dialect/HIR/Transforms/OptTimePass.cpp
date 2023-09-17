@@ -14,7 +14,7 @@ private:
   LogicalResult visitOp(hir::ScheduledOp op);
 
 private:
-  Optional<TimingInfo *> timingInfo;
+  std::optional<TimingInfo *> timingInfo;
 };
 
 LogicalResult OptTimePass::visitOp(hir::ScheduledOp op) {

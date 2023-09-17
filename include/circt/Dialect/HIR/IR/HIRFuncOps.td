@@ -7,8 +7,8 @@ include "HIROpInterfaces.td"
 include "HIRTypes.td"
 
 def FuncOp : HIR_Op<"func", 
-  [Symbol, SingleBlockImplicitTerminator<"ReturnOp">, FunctionOpInterface, FuncLike,
-  IsolatedFromAbove, CallableOpInterface, HasParent<"mlir::ModuleOp">,DeclareOpInterfaceMethods<RegionOp>]> {
+  [Symbol, SingleBlockImplicitTerminator<"ReturnOp">,  FuncLike,
+  IsolatedFromAbove,  HasParent<"mlir::ModuleOp">,DeclareOpInterfaceMethods<RegionOp>]> {
 
   let summary = "Function definition";
   let description = [{
@@ -25,7 +25,9 @@ def FuncOp : HIR_Op<"func",
       StrAttr:$sym_name,
       TypeAttr:$funcTy,
       ArrayAttr:$argNames,
-      OptionalAttr<ArrayAttr>:$resultNames
+      OptionalAttr<ArrayAttr>:$resultNames,
+      OptionalAttr<ArrayAttr>:$arg_attrs,
+      OptionalAttr<ArrayAttr>:$result_attrs
       );
 
   let regions = (region SizedRegion<1>:$body);
@@ -39,7 +41,6 @@ def FuncOp : HIR_Op<"func",
     private:
       // FunctionOpInterface interface.
       public:
-      mlir::Type getFunctionType();
       hir::FuncType getFuncType();
       ArrayRef<Type> getArgumentTypes(); 
       ArrayRef<Type> getResultTypes() ;
@@ -127,7 +128,7 @@ let arguments = (ins
 }
 
 def CallOp : HIR_Op<"call",
-[CallOpInterface,DeclareOpInterfaceMethods<ScheduledOp>] > {
+[DeclareOpInterfaceMethods<ScheduledOp>] > {
   let summary = "Function call";
   let description = [{
     This Op calls a function/module. 

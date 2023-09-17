@@ -21,7 +21,7 @@
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
 #include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Builders.h"
@@ -53,7 +53,7 @@ struct AffineToHIR : public AffineToHIRBase<AffineToHIR> {
 static SmallVector<DimKind> getDimKinds(int numDims, DictionaryAttr attr) {
   SmallVector<DimKind> out;
   if (auto dimKinds = attr.getNamed("hir.bank_dims")) {
-    auto bankDims = dimKinds.getValue().getValue().dyn_cast<ArrayAttr>();
+    auto bankDims = dimKinds.value().getValue().dyn_cast<ArrayAttr>();
     for (auto isBanked : bankDims) {
       if (isBanked.dyn_cast<mlir::BoolAttr>().getValue() == true) {
         out.push_back(DimKind::BANK);
@@ -73,17 +73,23 @@ static Value emitI64Expr(OpBuilder &builder, ArrayRef<HIRValue> i64Values,
 
   auto uLoc = builder.getUnknownLoc();
   int64_t const constCoeff = flattenedExprCoeffs.back();
-  Value exprResult = builder.create<circt::hw::ConstantOp>(
-      uLoc, builder.getI64IntegerAttr(constCoeff));
+  Value exprResult = builder
+                         .create<circt::hw::ConstantOp>(
+                             uLoc, builder.getI64IntegerAttr(constCoeff))
+                         .getResult();
   for (size_t n = 0; n < i64Values.size(); n++) {
     auto coeff = flattenedExprCoeffs[n];
-    Value vCoeff = builder.create<circt::hw::ConstantOp>(
-        uLoc, builder.getI64IntegerAttr(coeff));
+    Value vCoeff = builder
+                       .create<circt::hw::ConstantOp>(
+                           uLoc, builder.getI64IntegerAttr(coeff))
+                       .getResult();
     Value value = i64Values[n].getValue();
     assert(value.getType().isa<IntegerType>() &&
            value.getType().getIntOrFloatBitWidth() == 64);
-    Value prod = builder.create<circt::comb::MulOp>(uLoc, vCoeff, value);
-    exprResult = builder.create<circt::comb::AddOp>(uLoc, exprResult, prod);
+    Value prod =
+        builder.create<circt::comb::MulOp>(uLoc, vCoeff, value).getResult();
+    exprResult =
+        builder.create<circt::comb::AddOp>(uLoc, exprResult, prod).getResult();
   }
   return exprResult;
 }
@@ -120,9 +126,11 @@ SmallVector<Value> AffineToHIRImpl::getFlattenedHIRIndices(
       if (idxWidth != 64) {
         assert(idxWidth < 64);
         auto idxTy = builder.getIntegerType(helper::clog2(shape[i]));
-        finalIdx = builder.create<circt::comb::ExtractOp>(
-            builder.getUnknownLoc(), idxTy, finalIdx,
-            builder.getI32IntegerAttr(0));
+        finalIdx = builder
+                       .create<circt::comb::ExtractOp>(
+                           builder.getUnknownLoc(), idxTy, finalIdx,
+                           builder.getI32IntegerAttr(0))
+                       .getResult();
       }
     } else {
       int idxLoc = -1;
@@ -288,13 +296,13 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::FuncOp op) {
 
 LogicalResult AffineToHIRImpl::visitOp(hir::ProbeOp op) {
   auto hirInputValue = valueConverter.getBlockLocalValue(
-      builder, op.input(), builder.getInsertionBlock());
+      builder, op.getInput(), builder.getInsertionBlock());
 
   builder.create<hir::ProbeOp>(op->getLoc(), hirInputValue.getValue(),
-                               op.verilog_name());
+                               op.getVerilogName());
   if (hirInputValue.getTimeVar())
     builder.create<hir::ProbeOp>(op->getLoc(), hirInputValue.getTimeVar(),
-                                 op.verilog_name().str() + "_valid");
+                                 op.getVerilogName().str() + "_valid");
   return success();
 }
 
@@ -325,6 +333,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::affine::AffineForOp op) {
   Value tRegion = builder.getInsertionBlock()->getArguments().back();
 
   auto loopII = op->getAttrOfType<IntegerAttr>("II").getInt();
+
   auto offset = scheduler->getTimeOffset(op);
   auto offsetAttr = builder.getI64IntegerAttr(offset);
 
@@ -451,8 +460,10 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::arith::ConstantOp op) {
     return success();
   }
   if (ty.isSignlessInteger()) {
-    Value v = builder.create<circt::hw::ConstantOp>(
-        op->getLoc(), op.getValue().dyn_cast<IntegerAttr>());
+    Value v = builder
+                  .create<circt::hw::ConstantOp>(
+                      op->getLoc(), op.getValue().dyn_cast<IntegerAttr>())
+                  .getResult();
     valueConverter.mapValueToHIRValue(op.getResult(), HIRValue(v),
                                       v.getParentBlock());
 
@@ -489,15 +500,15 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::memref::AllocaOp op) {
   auto memKindStrAttr = attr.getAs<StringAttr>("mem_kind");
   auto ports = helper::extractMemrefPortsFromDict(attr);
 
-  if (!ports.hasValue())
+  if (!ports)
     return op->emitError("Could not find hir.memref.ports attr.");
   if (!memKindStrAttr)
     return op->emitError("Could not find mem_kind attr.");
 
-  auto hirTy = getHIRType(op.memref().getType(), attr);
+  auto hirTy = getHIRType(op.getMemref().getType(), attr);
 
   auto allocaOp = builder.create<hir::AllocaOp>(
-      op->getLoc(), hirTy, toMemKindAttr(memKindStrAttr), ports.getValue());
+      op->getLoc(), hirTy, toMemKindAttr(memKindStrAttr), ports.value());
 
   if (op->hasAttrOfType<ArrayAttr>("names"))
     allocaOp->setAttr("names", op->getAttr("names"));
@@ -511,7 +522,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::CallOp op) {
       op->getParentOfType<mlir::ModuleOp>().lookupSymbol(op.getCalleeAttr()));
   assert(hirFuncExternOp);
   Value tRegion = builder.getInsertionBlock()->getArguments().back();
-  auto offset = scheduler->getTimeOffset(op);
+  auto offset = scheduler->getTimeOffset((op.getOperation()));
   auto offsetAttr = builder.getI64IntegerAttr(offset);
   SmallVector<HIRValue, 4> hirOperands;
   auto hirFuncTy = hirFuncExternOp.getFuncType();
@@ -544,7 +555,7 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::CallOp op) {
 
   auto callOp = builder.create<hir::CallOp>(
       op->getLoc(), getHIRValueTypes(op->getResultTypes()), instanceName,
-      op.getCalleeAttr(), hirFuncExternOp.funcTyAttr(), operands, tRegion,
+      op.getCalleeAttr(), hirFuncExternOp.getFuncTyAttr(), operands, tRegion,
       offsetAttr);
 
   for (auto attr : op->getAttrs()) {
@@ -621,7 +632,7 @@ LogicalResult AffineToHIRImpl::visitOperation(Operation *operation) {
     return visitOp(op);
   if (auto op = dyn_cast<hir::ProbeOp>(operation))
     return visitOp(op);
-  if (isa<arith::ArithmeticDialect>(operation->getDialect()))
+  if (isa<arith::ArithDialect>(operation->getDialect()))
     return visitArithOp(operation);
   return operation->emitError("Unknown operation for affine-to-hir pass.");
 }

@@ -64,11 +64,11 @@ let cppNamespace = "circt::hir";
     >,
     InterfaceMethod<
       "Get input args names.",
-      "ArrayAttr", "argNames"
+      "ArrayAttr", "getArgNames"
     >,
     InterfaceMethod<
       "Get input args names.",
-      "std::optional<ArrayAttr>", "resultNames"
+      "std::optional<ArrayAttr>", "getResultNames"
     >,
   ];
 }

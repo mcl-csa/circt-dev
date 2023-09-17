@@ -19,26 +19,26 @@ enum DimKind { ADDR = 0, BANK = 1 };
 #define GET_TYPEDEF_CLASSES
 #include "circt/Dialect/HIR/IR/HIRTypes.h.inc"
 
-mlir::ParseResult parseBankedDimensionList(
-    mlir::AsmParser &parser, mlir::FailureOr<mlir::SmallVector<int64_t>> &shape,
-    mlir::FailureOr<mlir::SmallVector<circt::hir::DimKind>> &dimKinds);
+mlir::ParseResult
+parseBankedDimensionList(mlir::AsmParser &parser,
+                         mlir::SmallVector<int64_t> &shape,
+                         mlir::SmallVector<circt::hir::DimKind> &dimKinds);
 
 void printBankedDimensionList(mlir::AsmPrinter &printer,
                               mlir::ArrayRef<int64_t> shape,
                               mlir::ArrayRef<circt::hir::DimKind> dimKinds);
 
-mlir::ParseResult parseTypedArgList(
-    mlir::AsmParser &parser,
-    mlir::FailureOr<mlir::SmallVector<mlir::Type>> &argTypes,
-    mlir::FailureOr<mlir::SmallVector<mlir::DictionaryAttr>> &argAttrs);
+mlir::ParseResult
+parseTypedArgList(mlir::AsmParser &parser,
+                  mlir::SmallVector<mlir::Type> &argTypes,
+                  mlir::SmallVector<mlir::DictionaryAttr> &argAttrs);
 
 void printTypedArgList(mlir::AsmPrinter &printer,
                        mlir::ArrayRef<mlir::Type> argTypes,
                        mlir::ArrayRef<mlir::DictionaryAttr> argAttrs);
 
-mlir::ParseResult
-parseDimensionList(mlir::AsmParser &parser,
-                   mlir::FailureOr<mlir::SmallVector<int64_t>> &shape);
+mlir::ParseResult parseDimensionList(mlir::AsmParser &parser,
+                                     mlir::SmallVector<int64_t> &shape);
 void printDimensionList(mlir::AsmPrinter &printer,
                         mlir::ArrayRef<int64_t> shape);
 

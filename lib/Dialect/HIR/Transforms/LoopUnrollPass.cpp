@@ -8,7 +8,7 @@
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWOps.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include <string>
 
 using namespace circt;
@@ -26,23 +26,23 @@ LogicalResult unrollLoopFull(hir::ForOp forOp) {
   auto builder = OpBuilder(forOp);
   builder.setInsertionPointAfter(forOp);
 
-  if (failed(helper::isConstantIntValue(forOp.lb())))
+  if (failed(helper::isConstantIntValue(forOp.getLb())))
     return forOp.emitError("Expected lower bound to be constant.");
-  if (failed(helper::isConstantIntValue(forOp.ub())))
+  if (failed(helper::isConstantIntValue(forOp.getUb())))
     return forOp.emitError("Expected upper bound to be constant.");
-  if (failed(helper::isConstantIntValue(forOp.step())))
+  if (failed(helper::isConstantIntValue(forOp.getStep())))
     return forOp.emitError("Expected step to be constant.");
 
-  int64_t const lb = helper::getConstantIntValue(forOp.lb()).getValue();
-  int64_t const ub = helper::getConstantIntValue(forOp.ub()).getValue();
-  int64_t const step = helper::getConstantIntValue(forOp.step()).getValue();
+  int64_t const lb = helper::getConstantIntValue(forOp.getLb()).value();
+  int64_t const ub = helper::getConstantIntValue(forOp.getUb()).value();
+  int64_t const step = helper::getConstantIntValue(forOp.getStep()).value();
 
   auto *context = builder.getContext();
-  assert(forOp.offset() == 0);
+  assert(forOp.getOffset() == 0);
 
-  Value mappedIterTimeVar = forOp.tstart();
+  Value mappedIterTimeVar = forOp.getTstart();
   SmallVector<Value> mappedIterArgs;
-  for (auto iterArg : forOp.iter_args())
+  for (auto iterArg : forOp.getIterArgs())
     mappedIterArgs.push_back(iterArg);
 
   // insert the unrolled body.
@@ -53,8 +53,8 @@ LogicalResult unrollLoopFull(hir::ForOp forOp) {
     helper::setNames(loopIVOp, forOp.getInductionVarName());
 
     // Populate the operandMap.
-    BlockAndValueMapping operandMap;
-    for (size_t i = 0; i < forOp.iter_args().size(); i++) {
+    IRMapping operandMap;
+    for (size_t i = 0; i < forOp.getIterArgs().size(); i++) {
       Value const regionIterArg = loopBodyBlock.getArgument(i);
       operandMap.map(regionIterArg, mappedIterArgs[i]);
     }
@@ -64,17 +64,18 @@ LogicalResult unrollLoopFull(hir::ForOp forOp) {
     // Copy the loop body.
     for (auto &operation : loopBodyBlock) {
       if (auto nextIterOp = dyn_cast<hir::NextIterOp>(operation)) {
-        assert(nextIterOp.offset() == 0);
+        assert(nextIterOp.getOffset() == 0);
         mappedIterArgs.clear();
-        for (auto iterArg : nextIterOp.iter_args())
+        for (auto iterArg : nextIterOp.getIterArgs())
           mappedIterArgs.push_back(operandMap.lookup(iterArg));
-        mappedIterTimeVar = operandMap.lookup(nextIterOp.tstart());
+        mappedIterTimeVar = operandMap.lookup(nextIterOp.getTstart());
       } else if (auto probeOp = dyn_cast<hir::ProbeOp>(operation)) {
-        auto unrolledName = builder.getStringAttr(probeOp.verilog_name() + "_" +
-                                                  forOp.getInductionVarName() +
-                                                  "_" + std::to_string(i));
-        builder.create<hir::ProbeOp>(
-            probeOp.getLoc(), operandMap.lookup(probeOp.input()), unrolledName);
+        auto unrolledName = builder.getStringAttr(
+            probeOp.getVerilogName() + "_" + forOp.getInductionVarName() + "_" +
+            std::to_string(i));
+        builder.create<hir::ProbeOp>(probeOp.getLoc(),
+                                     operandMap.lookup(probeOp.getInput()),
+                                     unrolledName);
       } else {
         auto *newOperation = builder.clone(operation, operandMap);
         // If its a CallOp then change the instance name. Otherwise it will get
@@ -82,7 +83,7 @@ LogicalResult unrollLoopFull(hir::ForOp forOp) {
         // loop are not fused together.
         if (auto callOp = dyn_cast<hir::CallOp>(operation)) {
           auto instanceName =
-              callOp.instance_name().str() + "_" + std::to_string(i);
+              callOp.getInstanceName().str() + "_" + std::to_string(i);
           newOperation->setAttr("instance_name",
                                 builder.getStringAttr(instanceName));
         }
@@ -90,11 +91,11 @@ LogicalResult unrollLoopFull(hir::ForOp forOp) {
     }
   }
 
-  assert(forOp.iter_args().size() == forOp.iterResults().size());
+  assert(forOp.getIterArgs().size() == forOp.getIterResults().size());
   // replace the ForOp results.
-  forOp.t_end().replaceAllUsesWith(mappedIterTimeVar);
-  for (size_t i = 0; i < forOp.iterResults().size(); i++)
-    forOp.iterResults()[i].replaceAllUsesWith(mappedIterArgs[i]);
+  forOp.getTEnd().replaceAllUsesWith(mappedIterTimeVar);
+  for (size_t i = 0; i < forOp.getIterResults().size(); i++)
+    forOp.getIterResults()[i].replaceAllUsesWith(mappedIterArgs[i]);
 
   forOp.erase();
   return success();

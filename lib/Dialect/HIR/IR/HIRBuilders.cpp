@@ -20,7 +20,7 @@ void BusMapOp::build(
   }
 
   hir::YieldOp terminator = bodyCtor(builder, blockArgs);
-  auto results = terminator.operands();
+  auto results = terminator.getOperands();
   SmallVector<Type> resultTypes;
   for (auto res : results) {
     resultTypes.push_back(
@@ -45,7 +45,7 @@ void BusTensorMapOp::build(
   }
 
   hir::YieldOp terminator = bodyCtor(builder, blockArgs);
-  auto results = terminator.operands();
+  auto results = terminator.getOperands();
   SmallVector<Type> resultTypes;
   auto shape = operands[0].getType().dyn_cast<hir::BusTensorType>().getShape();
   for (auto res : results) {
@@ -73,7 +73,7 @@ void ForOp::build(
   if (tstart)
     result.addOperands(tstart);
   if (offset)
-    result.addAttribute(offsetAttrName(result.name), offset);
+    result.addAttribute(getOffsetAttrName(result.name), offset);
 
   OpBuilder::InsertionGuard guard(builder);
   auto *bb = builder.createBlock(result.addRegion());
@@ -128,20 +128,16 @@ void hir::FuncOp::build(OpBuilder &builder, OperationState &result,
     functionArgAttrs.push_back(attr);
   functionArgAttrs.push_back(DictionaryAttr::get(
       builder.getContext(), SmallVector<NamedAttribute>({})));
-  result.addAttribute("arg_attrs",
-                      ArrayAttr::get(builder.getContext(), functionArgAttrs));
 
   auto funcResultAttrs = funcTy.getResultAttrs();
   for (auto attr : funcResultAttrs)
     functionResultAttrs.push_back(attr);
 
-  result.addAttribute(
-      "res_attrs", ArrayAttr::get(builder.getContext(), functionResultAttrs));
   assert(argNames.size() == funcTy.getInputTypes().size() + 1);
-
   auto functionTy = funcTy.getFunctionType();
   FuncOp::build(builder, result, functionTy, symName, funcTy, argNames,
-                resultNames);
+                resultNames, builder.getArrayAttr(functionArgAttrs),
+                builder.getArrayAttr(functionResultAttrs));
   auto &region = result.regions[0];
   auto *bb = new Block();
   bb->addArguments(functionTy.getInputs(),

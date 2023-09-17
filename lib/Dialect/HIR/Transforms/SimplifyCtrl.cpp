@@ -11,7 +11,7 @@
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/SV/SVOps.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Visitors.h"
 #include <iostream>
 using namespace circt;
@@ -71,39 +71,39 @@ LogicalResult SimplifyCtrlPass::visitOp(ForOp forOp) {
   builder.setInsertionPoint(forOp);
   Value initialCondition = builder.create<comb::ICmpOp>(
       builder.getUnknownLoc(),
-      forOp.lb().getType().isSignedInteger() ? comb::ICmpPredicate::slt
-                                             : comb::ICmpPredicate::ult,
-      forOp.lb(), forOp.ub());
+      forOp.getLb().getType().isSignedInteger() ? comb::ICmpPredicate::slt
+                                                : comb::ICmpPredicate::ult,
+      forOp.getLb(), forOp.getUb());
 
   SmallVector<Value> iterArgs;
-  for (auto arg : forOp.iter_args())
+  for (auto arg : forOp.getIterArgs())
     iterArgs.push_back(arg);
 
   auto whileOp = builder.create<hir::WhileOp>(
       forOp.getLoc(), forOp.getResultTypes(), initialCondition, iterArgs,
-      forOp.iter_arg_delaysAttr(), forOp.tstart(), forOp.offsetAttr());
-  auto forNextIterOp = dyn_cast<NextIterOp>(&forOp.body().begin()->back());
+      forOp.getIterArgDelaysAttr(), forOp.getTstart(), forOp.getOffsetAttr());
+  auto forNextIterOp = dyn_cast<NextIterOp>(&forOp.getBody().begin()->back());
   assert(forNextIterOp);
 
   whileOp.addEntryBlock();
-  builder.setInsertionPointToStart(whileOp.getBody(0));
+  builder.setInsertionPointToStart(&whileOp.getBody().getBlocks().front());
 
   Value const isFirstIter = builder.create<hir::IsFirstIterOp>(
       builder.getUnknownLoc(), builder.getI1Type(), whileOp.getIterTimeVar(),
       builder.getI64IntegerAttr(0));
 
-  auto conditionAndIV =
-      insertForOpStateMachine(builder, isFirstIter, forOp.lb(), forOp.ub(),
-                              forOp.step(), whileOp.getIterTimeVar());
+  auto conditionAndIV = insertForOpStateMachine(
+      builder, isFirstIter, forOp.getLb(), forOp.getUb(), forOp.getStep(),
+      whileOp.getIterTimeVar());
   auto condition = conditionAndIV.first;
   auto iv = conditionAndIV.second;
 
   // Create the operandMap.
-  BlockAndValueMapping operandMap;
+  IRMapping operandMap;
   operandMap.map(forOp.getInductionVar(), iv);
-  for (size_t i = 0; i < forOp.iter_args().size(); i++)
-    operandMap.map(forOp.body().front().getArgument(i),
-                   whileOp.body().front().getArgument(i));
+  for (size_t i = 0; i < forOp.getIterArgs().size(); i++)
+    operandMap.map(forOp.getBody().front().getArgument(i),
+                   whileOp.getBody().front().getArgument(i));
 
   operandMap.map(forOp.getIterTimeVar(), whileOp.getIterTimeVar());
 
@@ -111,15 +111,16 @@ LogicalResult SimplifyCtrlPass::visitOp(ForOp forOp) {
   for (auto &operation : forOp.getLoopBody().front()) {
     if (auto nextIterOp = dyn_cast<hir::NextIterOp>(operation)) {
       SmallVector<Value> mappedIterArgs;
-      for (auto iterArg : nextIterOp.iter_args()) {
+      for (auto iterArg : nextIterOp.getIterArgs()) {
         auto mappedIterArg = operandMap.lookupOrNull(iterArg);
         mappedIterArg = mappedIterArg ? mappedIterArg : iterArg;
         mappedIterArgs.push_back(mappedIterArg);
       }
 
-      builder.create<hir::NextIterOp>(
-          builder.getUnknownLoc(), condition, mappedIterArgs,
-          operandMap.lookup(nextIterOp.tstart()), nextIterOp.offsetAttr());
+      builder.create<hir::NextIterOp>(builder.getUnknownLoc(), condition,
+                                      mappedIterArgs,
+                                      operandMap.lookup(nextIterOp.getTstart()),
+                                      nextIterOp.getOffsetAttr());
     } else {
       if (isToBeErased(&operation))
         continue;
@@ -134,13 +135,12 @@ LogicalResult SimplifyCtrlPass::visitOp(ForOp forOp) {
   return success();
 }
 
-SmallVector<Value> inlineRegion(OpBuilder &builder,
-                                BlockAndValueMapping &operandMap,
+SmallVector<Value> inlineRegion(OpBuilder &builder, IRMapping &operandMap,
                                 mlir::Region &r) {
   SmallVector<Value> regionOutput;
   for (auto &operation : r.front()) {
     if (auto yieldOp = dyn_cast<hir::YieldOp>(operation)) {
-      for (auto operand : yieldOp.operands()) {
+      for (auto operand : yieldOp.getOperands()) {
         auto mappedOperand = operandMap.lookupOrNull(operand);
         mappedOperand = mappedOperand ? mappedOperand : operand;
         regionOutput.push_back(mappedOperand);
@@ -153,23 +153,23 @@ SmallVector<Value> inlineRegion(OpBuilder &builder,
 }
 
 LogicalResult SimplifyCtrlPass::visitOp(IfOp op) {
-  assert(op.offset() == 0);
+  assert(op.getOffset() == 0);
   OpBuilder builder(op);
   builder.setInsertionPoint(op);
-  BlockAndValueMapping ifRegionOperandMap;
-  BlockAndValueMapping elseRegionOperandMap;
+  IRMapping ifRegionOperandMap;
+  IRMapping elseRegionOperandMap;
   auto c1 = helper::materializeIntegerConstant(builder, 1, 1);
   Value tstartBus = builder.create<hir::CastOp>(
       builder.getUnknownLoc(),
       hir::BusType::get(builder.getContext(), builder.getI1Type()),
-      op.tstart());
+      op.getTstart());
   auto conditionBus = builder.create<hir::BusOp>(
       builder.getUnknownLoc(),
       BusType::get(builder.getContext(), builder.getI1Type()));
 
   builder
       .create<hir::BusSendOp>(builder.getUnknownLoc(), c1, conditionBus,
-                              op.tstart(), op.offsetAttr())
+                              op.getTstart(), op.getOffsetAttr())
       ->setAttr("default", IntegerAttr::get(builder.getI1Type(), 0));
 
   // This acts as conditionBus && tstartBus.
@@ -216,12 +216,12 @@ LogicalResult SimplifyCtrlPass::visitOp(IfOp op) {
   hir::YieldOp ifYield;
   hir::YieldOp elseYield;
 
-  auto ifResults = inlineRegion(builder, ifRegionOperandMap, op.if_region());
+  auto ifResults = inlineRegion(builder, ifRegionOperandMap, op.getIfRegion());
   auto elseResults =
-      inlineRegion(builder, elseRegionOperandMap, op.else_region());
+      inlineRegion(builder, elseRegionOperandMap, op.getElseRegion());
   for (size_t i = 0; i < op.getNumResults(); i++) {
-    op.results()[i].replaceAllUsesWith(builder.create<comb::MuxOp>(
-        builder.getUnknownLoc(), ifResults[i].getType(), op.condition(),
+    op.getResults()[i].replaceAllUsesWith(builder.create<comb::MuxOp>(
+        builder.getUnknownLoc(), ifResults[i].getType(), op.getCondition(),
         ifResults[i], elseResults[i]));
   }
   opsToErase.push_back(op);

@@ -7,10 +7,11 @@
 #include "circt/Dialect/HIR/IR//helper.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
-#include "mlir/IR/BlockAndValueMapping.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/PatternMatch.h"
+#include <mlir/IR/IRMapping.h>
 
 using namespace circt;
 using namespace hir;
@@ -20,16 +21,17 @@ template <typename OPTYPE>
 static LogicalResult splitOffsetIntoSeparateOp(OPTYPE op,
                                                PatternRewriter &rewriter) {
   auto *context = rewriter.getContext();
-  if (!op.offset())
+  if (!op.getOffset())
     return failure();
-  if (op.offset() == 0)
+  if (op.getOffset() == 0)
     return failure();
 
-  Value tstart = rewriter.create<hir::TimeOp>(
-      op.getLoc(), helper::getTimeType(context), op.tstart(), op.offsetAttr());
+  Value tstart =
+      rewriter.create<hir::TimeOp>(op.getLoc(), helper::getTimeType(context),
+                                   op.getTstart(), op.getOffsetAttr());
 
-  op.tstartMutable().assign(tstart);
-  op.offsetAttr(rewriter.getI64IntegerAttr(0));
+  op.getTstartMutable().assign(tstart);
+  op.setOffsetAttr(rewriter.getI64IntegerAttr(0));
   return success();
 }
 
@@ -69,26 +71,26 @@ LogicalResult CallOp::canonicalize(CallOp op, PatternRewriter &rewriter) {
 LogicalResult IfOp::canonicalize(IfOp op, mlir::PatternRewriter &rewriter) {
   LogicalResult result = splitOffsetIntoSeparateOp(op, rewriter);
 
-  auto constantOp =
-      dyn_cast_or_null<mlir::arith::ConstantOp>(op.condition().getDefiningOp());
+  auto constantOp = dyn_cast_or_null<mlir::arith::ConstantOp>(
+      op.getCondition().getDefiningOp());
   if (!constantOp)
     return result;
 
   int condition = constantOp.getValue().dyn_cast<IntegerAttr>().getInt();
-  BlockAndValueMapping operandMap;
+  IRMapping operandMap;
   SmallVector<Value> yieldedValues;
-  operandMap.map(op.getRegionTimeVar(), op.tstart());
-  Region &selectedRegion = condition ? op.if_region() : op.else_region();
+  operandMap.map(op.getRegionTimeVar(), op.getTstart());
+  Region &selectedRegion = condition ? op.getIfRegion() : op.getElseRegion();
   for (Operation &operation : selectedRegion.front()) {
     if (auto yieldOp = dyn_cast<hir::YieldOp>(operation)) {
-      assert(yieldOp.operands().size() == op.results().size());
-      for (Value value : yieldOp.operands())
+      assert(yieldOp.getOperands().size() == op.getResults().size());
+      for (Value value : yieldOp.getOperands())
         yieldedValues.push_back(helper::lookupOrOriginal(operandMap, value));
       continue;
     }
     rewriter.clone(operation, operandMap);
   }
-  if (yieldedValues.size() > 0)
+  if (!yieldedValues.empty())
     rewriter.replaceOp(op, yieldedValues);
   return success();
 }
@@ -99,7 +101,7 @@ LogicalResult NextIterOp::canonicalize(NextIterOp op,
   return splitOffsetIntoSeparateOp(op, rewriter);
 }
 
-OpFoldResult TimeOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult TimeOp::fold(TimeOp::FoldAdaptor a) {
   auto startTime = this->getStartTime();
   if (startTime.getOffset() == 0)
     return startTime.getTimeVar();

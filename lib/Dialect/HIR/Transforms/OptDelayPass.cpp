@@ -26,7 +26,7 @@ LogicalResult OptDelayPass::visitOp(hir::DelayOp op) {
   // Nothing to do if we don't know the initiation interval.
   if (!ii)
     return success();
-  auto numReg = std::ceil(op.delay() / ii.getValue());
+  auto numReg = std::ceil(op.getDelay() / ii.value());
   // FIXME: Do this opt for the general case.
   if (numReg > 1)
     return success();
@@ -42,12 +42,13 @@ LogicalResult OptDelayPass::visitOp(hir::DelayOp op) {
           .getResult();
   auto zeroIdx = helper::emitConstantOp(builder, 0).getResult();
   builder.create<hir::StoreOp>(
-      op->getLoc(), op.input(), mem, zeroIdx, builder.getI64IntegerAttr(1),
-      builder.getI64IntegerAttr(1), op.tstart(), op.offsetAttr());
+      op->getLoc(), op.getInput(), mem, zeroIdx, builder.getI64IntegerAttr(1),
+      builder.getI64IntegerAttr(1), op.getTstart(), op.getOffsetAttr());
   auto loadOp = builder.create<hir::LoadOp>(
       op->getLoc(), op.getResult().getType(), mem, zeroIdx,
-      builder.getI64IntegerAttr(0), builder.getI64IntegerAttr(0), op.tstart(),
-      builder.getI64IntegerAttr(op.offset() + op.delay()));
+      builder.getI64IntegerAttr(0), builder.getI64IntegerAttr(0),
+      op.getTstart(),
+      builder.getI64IntegerAttr(op.getOffset() + op.getDelay()));
   op->replaceAllUsesWith(loadOp);
   return success();
 }

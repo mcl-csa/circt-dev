@@ -323,9 +323,9 @@ void MemrefLoweringPass::removeMemrefArguments(hir::FuncLike op) {
   for (i = 0; i < funcTy.getInputAttrs().size(); i++) {
     auto attr = funcTy.getInputAttrs()[i];
     inputAttrs.push_back(attr);
-    inputNames.push_back(op.argNames()[i]);
+    inputNames.push_back(op.getArgNames()[i]);
   }
-  inputNames.push_back(op.argNames()[i]);
+  inputNames.push_back(op.getArgNames()[i]);
 
   for (int i = bb.getNumArguments() - 2 /*last arg is timetype*/; i >= 0; i--) {
     if (bb.getArgument(i).getType().isa<hir::MemrefType>()) {

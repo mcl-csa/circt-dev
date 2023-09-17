@@ -2,7 +2,6 @@
 #include "circt/Dialect/Comb/CombDialect.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HW/HWOps.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 
 using namespace circt;
 using namespace hir;
@@ -25,7 +24,7 @@ unsigned int EquivalentTimeMap::getLexicalOrder(ScheduledOp op) {
 }
 
 unsigned int EquivalentTimeMap::getLexicalOrder(Value op) {
-  return getLexicalOrder(op.getDefiningOp());
+  return getLexicalOrder(dyn_cast<hir::ScheduledOp>(op.getDefiningOp()));
 }
 
 Time EquivalentTimeMap::getEquivalentTimeWithSmallerOffset(ScheduledOp op) {

@@ -24,14 +24,14 @@ FuncExternPragmaHandler::FuncExternPragmaHandler(mlir::func::CallOp op) {
     if (delay)
       argDelays.push_back(*delay);
     else
-      argDelays.push_back(llvm::None);
+      argDelays.push_back(std::nullopt);
   }
   for (auto attr : hirFuncTy.getResultAttrs()) {
     auto delay = helper::getHIRDelayAttr(attr);
     if (delay)
       resultDelays.push_back(*delay);
     else
-      resultDelays.push_back(llvm::None);
+      resultDelays.push_back(std::nullopt);
   }
 }
 
@@ -135,12 +135,8 @@ MemrefPragmaHandler::RAMKind MemrefPragmaHandler::getRAMKind() {
 size_t MemrefPragmaHandler::getNumDims() { return dimKinds.size(); }
 DimKind MemrefPragmaHandler::getDimKind(size_t i) { return dimKinds[i]; }
 
-int64_t MemrefPragmaHandler::getRdLatency() {
-  return this->rdLatency.getValue();
-}
-int64_t MemrefPragmaHandler::getWrLatency() {
-  return this->wrLatency.getValue();
-}
+int64_t MemrefPragmaHandler::getRdLatency() { return this->rdLatency.value(); }
+int64_t MemrefPragmaHandler::getWrLatency() { return this->wrLatency.value(); }
 
 int64_t AffineForPragmaHandler::getII() {
   assert(ii > 0);

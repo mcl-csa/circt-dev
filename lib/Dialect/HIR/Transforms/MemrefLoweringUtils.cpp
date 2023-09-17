@@ -225,7 +225,7 @@ Value emitRdEnableBus(OpBuilder &builder, hir::MemrefType memrefTy) {
   return helper::emitIntegerBusOp(builder, 1);
 }
 Value emitRdDataBus(OpBuilder &builder, hir::MemrefType memrefTy) {
-  auto width = helper::getBitWidth(memrefTy.getElementType()).getValue();
+  auto width = helper::getBitWidth(memrefTy.getElementType()).value();
   auto i1Bus = helper::emitIntegerBusOp(builder, width);
   return i1Bus;
 }
@@ -234,7 +234,7 @@ Value emitWrEnableBus(OpBuilder &builder, hir::MemrefType memrefTy) {
 }
 
 Value emitWrDataBus(OpBuilder &builder, hir::MemrefType memrefTy) {
-  auto width = helper::getBitWidth(memrefTy.getElementType()).getValue();
+  auto width = helper::getBitWidth(memrefTy.getElementType()).value();
   auto i1Bus = helper::emitIntegerBusOp(builder, width);
   return i1Bus;
 }
@@ -256,15 +256,15 @@ std::string createHWMemoryName(MemKindEnum memKind, hir::MemrefType memrefTy,
   std::string name =
       toString(memKind) + "_" +
       std::to_string(memrefTy.getNumElementsPerBank()) + "x" +
-      std::to_string(helper::getBitWidth(memrefTy.getElementType()).getValue());
+      std::to_string(helper::getBitWidth(memrefTy.getElementType()).value());
   for (auto port : memPorts) {
     name += "_";
     if (helper::isMemrefRdPort(port))
       name +=
-          "r" + std::to_string(helper::getMemrefPortRdLatency(port).getValue());
+          "r" + std::to_string(helper::getMemrefPortRdLatency(port).value());
     if (helper::isMemrefWrPort(port))
       name +=
-          "w" + std::to_string(helper::getMemrefPortWrLatency(port).getValue());
+          "w" + std::to_string(helper::getMemrefPortWrLatency(port).value());
   }
   return name;
 }
@@ -275,10 +275,10 @@ std::string createVerilogMemoryName(MemKindEnum memKind, ArrayAttr memPorts) {
     name += "_";
     if (helper::isMemrefRdPort(port))
       name +=
-          "r" + std::to_string(helper::getMemrefPortRdLatency(port).getValue());
+          "r" + std::to_string(helper::getMemrefPortRdLatency(port).value());
     if (helper::isMemrefWrPort(port))
       name +=
-          "w" + std::to_string(helper::getMemrefPortWrLatency(port).getValue());
+          "w" + std::to_string(helper::getMemrefPortWrLatency(port).value());
   }
   return name;
 }
@@ -291,7 +291,7 @@ LogicalResult emitMemoryInstance(OpBuilder &builder, hir::MemrefType memrefTy,
                                  llvm::StringRef memName,
                                  std::string instanceName, Value tstart) {
 
-  auto elementWidth = helper::getBitWidth(memrefTy.getElementType()).getValue();
+  auto elementWidth = helper::getBitWidth(memrefTy.getElementType()).value();
   auto addrWidth = helper::clog2(memrefTy.getNumElementsPerBank());
   auto sendAttr = helper::getDictionaryAttr("hir.bus.ports",
                                             builder.getStrArrayAttr({"send"}));

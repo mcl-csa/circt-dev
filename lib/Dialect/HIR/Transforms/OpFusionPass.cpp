@@ -8,8 +8,8 @@
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWOps.h"
-#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/IRMapping.h"
 #include <numeric>
 #include <string>
 using namespace circt;
@@ -43,34 +43,34 @@ private:
 };
 } // end anonymous namespace
 
-Optional<AccessInfo> addAccessInfoAttr(hir::CallOp op) {
+std::optional<AccessInfo> addAccessInfoAttr(hir::CallOp op) {
   if (op->getParentOfType<hir::WhileOp>())
-    return llvm::None;
+    return std::nullopt;
   if (!op->hasAttrOfType<IntegerAttr>("II"))
-    return llvm::None;
+    return std::nullopt;
 
   auto *operation = op.getOperation();
   AccessInfo info;
   info.minII = 0;
-  info.timeVar = op.tstart();
+  info.timeVar = op.getTstart();
   if (info.timeVar !=
       dyn_cast<hir::RegionOp>(operation->getParentOp()).getRegionTimeVars()[0])
-    return llvm::None;
-  info.startTime = op.offset();
-  info.endTime = op.offset() + op->getAttrOfType<IntegerAttr>("II").getInt();
+    return std::nullopt;
+  info.startTime = op.getOffset();
+  info.endTime = op.getOffset() + op->getAttrOfType<IntegerAttr>("II").getInt();
   while (auto parentForOp = operation->getParentOfType<hir::ForOp>()) {
     if (!parentForOp.getInitiationInterval().has_value())
-      return llvm::None;
+      return std::nullopt;
 
     if (!parentForOp.getTripCount().has_value())
-      return llvm::None;
+      return std::nullopt;
 
     info.minII =
-        std::gcd(info.minII, parentForOp.getInitiationInterval().getValue());
-    info.timeVar = parentForOp.tstart();
-    info.startTime += parentForOp.offset();
-    info.endTime += parentForOp.getInitiationInterval().getValue() *
-                    parentForOp.getTripCount().getValue();
+        std::gcd(info.minII, parentForOp.getInitiationInterval().value());
+    info.timeVar = parentForOp.getTstart();
+    info.startTime += parentForOp.getOffset();
+    info.endTime += parentForOp.getInitiationInterval().value() *
+                    parentForOp.getTripCount().value();
     operation = parentForOp;
   }
   Builder builder(op);

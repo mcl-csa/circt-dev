@@ -60,9 +60,9 @@ LogicalResult OptBitWidthPass::visitOp(DelayOp op) {
   if (bitwidth < op.getResult().getType().getIntOrFloatBitWidth()) {
     OpBuilder builder(op);
     Value newValue = builder.create<circt::comb::ExtractOp>(
-        builder.getUnknownLoc(), builder.getIntegerType(bitwidth), op.input(),
-        builder.getI32IntegerAttr(0));
-    op.inputMutable().assign(newValue);
+        builder.getUnknownLoc(), builder.getIntegerType(bitwidth),
+        op.getInput(), builder.getI32IntegerAttr(0));
+    op.getInputMutable().assign(newValue);
     op.getResult().setType(newValue.getType());
   }
   return success();
@@ -121,25 +121,25 @@ LogicalResult OptBitWidthPass::visitOp(hir::ForOp op) {
     return success();
 
   // Otherwise reduce bitwidth of Induction Var.
-  auto lb = helper::getConstantIntValue(op.lb());
-  auto ub = helper::getConstantIntValue(op.ub());
-  auto step = helper::getConstantIntValue(op.step());
+  auto lb = helper::getConstantIntValue(op.getLb());
+  auto ub = helper::getConstantIntValue(op.getUb());
+  auto step = helper::getConstantIntValue(op.getStep());
 
   auto bitwidth = getMinBitWidth(op.getInductionVar(), DenseSet<Operation *>());
   bitwidth = std::max(bitwidth, helper::clog2(*ub + 1));
   bitwidth = std::max(bitwidth, helper::clog2(*step + 1));
 
-  if (lb.hasValue() && ub.hasValue() && step.hasValue() &&
+  if (lb.value() && ub.value() && step.value() &&
       (bitwidth < op.getInductionVar().getType().getIntOrFloatBitWidth())) {
     builder.setInsertionPoint(op);
     auto ty = builder.getIntegerType(bitwidth);
 
     op.setInductionVar(ty);
-    op.lbMutable().assign(builder.create<hw::ConstantOp>(
+    op.getLbMutable().assign(builder.create<hw::ConstantOp>(
         builder.getUnknownLoc(), IntegerAttr::get(ty, *lb)));
-    op.ubMutable().assign(builder.create<hw::ConstantOp>(
+    op.getUbMutable().assign(builder.create<hw::ConstantOp>(
         builder.getUnknownLoc(), IntegerAttr::get(ty, *ub)));
-    op.stepMutable().assign(builder.create<hw::ConstantOp>(
+    op.getStepMutable().assign(builder.create<hw::ConstantOp>(
         builder.getUnknownLoc(), IntegerAttr::get(ty, *step)));
   }
 
