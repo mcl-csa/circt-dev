@@ -84,5 +84,7 @@ mlir::LogicalResult
 validatePositiveConstant(mlir::ArrayRef<mlir::Value> indices);
 mlir::Value emitIntegerBusOp(mlir::OpBuilder &builder, int64_t width);
 std::optional<int64_t> getOptionalTimeOffset(mlir::Operation *);
+
+std::string getHIRBusPortAttrName();
 } // namespace helper
 #endif

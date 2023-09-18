@@ -162,7 +162,8 @@ Operation *constantX(OpBuilder &builder, Type hirTy) {
   return builder.create<sv::ConstantXOp>(builder.getUnknownLoc(), hwTy);
 }
 
-ArrayAttr getHWParams(Attribute paramsAttr, bool ignoreValues) {
+ArrayAttr getHWParams(Operation *operation, bool ignoreDefaultParamValues) {
+  auto paramsAttr = operation->getAttr("params");
   if (!paramsAttr)
     return ArrayAttr();
 
@@ -174,12 +175,20 @@ ArrayAttr getHWParams(Attribute paramsAttr, bool ignoreValues) {
   for (const NamedAttribute &param : params) {
     auto name = builder.getStringAttr(param.getName().strref());
     hw::ParamDeclAttr hwParam;
-    mlir::TypedAttr value = dyn_cast<mlir::TypedAttr>(param.getValue());
-    if (ignoreValues || !value)
-      hwParam = hw::ParamDeclAttr::get(
-          name, mlir::NoneType::get(builder.getContext()));
+    mlir::Type type;
+    if (mlir::TypedAttr value = dyn_cast<mlir::TypedAttr>(param.getValue()))
+      type = value.getType();
+    else if (mlir::IntegerAttr value =
+                 dyn_cast<mlir::IntegerAttr>(param.getValue()))
+      type = value.getType();
     else
-      hwParam = hw::ParamDeclAttr::get(name, value);
+      assert(false);
+
+    if (ignoreDefaultParamValues)
+      hwParam = hw::ParamDeclAttr::get(name, type);
+    else
+      hwParam = hw::ParamDeclAttr::get(builder.getContext(), name, type,
+                                       param.getValue());
     hwParams.push_back(hwParam);
   }
   return ArrayAttr::get(builder.getContext(), hwParams);

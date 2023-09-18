@@ -172,9 +172,9 @@ void emitCallOpOperandsForMemrefPort(
     SmallVectorImpl<Value> &operands, SmallVectorImpl<Type> &inputTypes,
     SmallVectorImpl<DictionaryAttr> &inputAttrs) {
   assert(mem.getType().isa<MemrefType>());
-  auto sendAttr = helper::getDictionaryAttr("hir.bus.ports",
+  auto sendAttr = helper::getDictionaryAttr(helper::getHIRBusPortAttrName(),
                                             builder.getStrArrayAttr({"send"}));
-  auto recvAttr = helper::getDictionaryAttr("hir.bus.ports",
+  auto recvAttr = helper::getDictionaryAttr(helper::getHIRBusPortAttrName(),
                                             builder.getStrArrayAttr({"recv"}));
   for (size_t j = 0; j < memrefInfo.getNumPorts(mem); j++) {
     auto duplicate = memrefInfo.emitDuplicatePortInterface(builder, mem, j);
@@ -293,9 +293,9 @@ LogicalResult emitMemoryInstance(OpBuilder &builder, hir::MemrefType memrefTy,
 
   auto elementWidth = helper::getBitWidth(memrefTy.getElementType()).value();
   auto addrWidth = helper::clog2(memrefTy.getNumElementsPerBank());
-  auto sendAttr = helper::getDictionaryAttr("hir.bus.ports",
+  auto sendAttr = helper::getDictionaryAttr(helper::getHIRBusPortAttrName(),
                                             builder.getStrArrayAttr({"send"}));
-  auto recvAttr = helper::getDictionaryAttr("hir.bus.ports",
+  auto recvAttr = helper::getDictionaryAttr(helper::getHIRBusPortAttrName(),
                                             builder.getStrArrayAttr({"recv"}));
 
   // Create the inputs for the call op that instantiates the memory.

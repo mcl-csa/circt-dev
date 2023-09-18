@@ -42,7 +42,11 @@ Operation *
 getConstantXArray(OpBuilder &builder, Type hwTy,
                   DenseMap<Value, SmallVector<Value>> &mapArrayToElements);
 
-ArrayAttr getHWParams(Attribute, bool ignoreValues = false);
+/// Convert to params for hw module. These become parameters in the Verilog
+/// module. ignoreDefaultParameters = true is used with the module definition to
+/// remove default parameter values. All parameter values are assigned at the
+/// call cite.
+ArrayAttr getHWParams(Operation *op, bool ignoreDefaultParameters = false);
 
 Value getDelayedValue(OpBuilder &builder, Value input, int64_t delay,
                       std::optional<StringRef> name, Location loc, Value clk,

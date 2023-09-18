@@ -243,12 +243,12 @@ LogicalResult HIRToHWPass::visitOp(hir::CallOp op) {
   auto instanceName = op.getInstanceNameAttr();
   assert(instanceName);
   auto *calleeHWModule = getEmittedHWModuleOp(op.getCallee());
-  hw::InstanceOp instanceOp = getOrCreateHWInstanceOp(
-      op.getLoc(), calleeHWModule, instanceName, hwInputs,
-      getHWParams(op->getAttr("params")), tstart);
+  hw::InstanceOp instanceOp =
+      getOrCreateHWInstanceOp(op.getLoc(), calleeHWModule, instanceName,
+                              hwInputs, getHWParams(op), tstart);
   copyHIRAttrs(op, instanceOp);
 
-  // Map callop input send buses to the results of the instance op and replace
+  // Map CallOp input send buses to the results of the instance op and replace
   // all prev uses of the placeholder hw ssa vars corresponding to these send
   // buses.
   uint64_t i;
@@ -472,7 +472,7 @@ LogicalResult HIRToHWPass::visitOp(hir::FuncExternOp op) {
   auto hwOp = builder->create<hw::HWModuleExternOp>(
       op.getLoc(), name, portMap.getPortInfoList(),
       verilogNameAttr ? verilogNameAttr.getValue() : op.getName(),
-      getHWParams(op->getAttr("params"), true));
+      getHWParams(op, true));
   mapNameToHWModuleOp[op.getName()] = hwOp;
   return success();
 }

@@ -229,8 +229,10 @@ bool isMemrefRdPort(Attribute port) {
 }
 
 StringRef extractBusPortFromDict(mlir::DictionaryAttr dict) {
-  auto ports =
-      dict.getNamed("hir.bus.ports").value().getValue().dyn_cast<ArrayAttr>();
+  auto ports = dict.getNamed(getHIRBusPortAttrName())
+                   .value()
+                   .getValue()
+                   .dyn_cast<ArrayAttr>();
   // Bus port should be either send or recv.
   assert(ports.size() == 1);
   return ports[0].dyn_cast<StringAttr>().strref();
@@ -498,4 +500,5 @@ std::optional<int64_t> getOptionalTimeOffset(mlir::Operation *operation) {
   return offsetAttr.getInt();
 }
 
+std::string getHIRBusPortAttrName() { return "hir.bus.ports"; }
 } // namespace helper

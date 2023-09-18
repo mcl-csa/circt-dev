@@ -32,7 +32,8 @@ verifyMemrefPortsAttribute(mlir::function_ref<InFlightDiagnostic()> emitError,
 LogicalResult
 verifyBusPortsAttribute(mlir::function_ref<InFlightDiagnostic()> emitError,
                         DictionaryAttr attrDict) {
-  auto memrefPortsNameAndAttr = attrDict.getNamed("hir.bus.ports");
+  auto memrefPortsNameAndAttr =
+      attrDict.getNamed(helper::getHIRBusPortAttrName());
   if (!memrefPortsNameAndAttr)
     return failure();
   if (!memrefPortsNameAndAttr->getValue().dyn_cast<ArrayAttr>())
@@ -85,8 +86,9 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
                << std::to_string(i) << ".";
     } else if (helper::isBusLikeType(inputTypes[i])) {
       if (failed(verifyBusPortsAttribute(emitError, inputAttrs[i])))
-        return emitError() << "Expected hir.bus.ports ArrayAttr for input arg"
-                           << std::to_string(i) << ".";
+        return emitError() << "Expected" << helper::getHIRBusPortAttrName()
+                           << "ArrayAttr for input arg" << std::to_string(i)
+                           << ".";
     } else if (inputTypes[i].dyn_cast<hir::TimeType>()) {
       continue;
     } else {
