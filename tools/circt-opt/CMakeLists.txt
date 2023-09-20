@@ -10,6 +10,7 @@ target_link_libraries(circt-opt
   PRIVATE
   CIRCTAffineToLoopSchedule
   CIRCTAffineToHIR
+  CIRCTHIRCosim
   CIRCTAnalysisTestPasses
   CIRCTArc
   CIRCTArcToLLVM

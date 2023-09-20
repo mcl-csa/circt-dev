@@ -419,7 +419,6 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::affine::AffineLoadOp op) {
 }
 
 LogicalResult AffineToHIRImpl::visitOp(mlir::affine::AffineStoreOp op) {
-
   Value hirMem = valueConverter.getMemref(op.getMemRef());
 
   auto port = scheduler->getPortNumForMemoryOp(op);

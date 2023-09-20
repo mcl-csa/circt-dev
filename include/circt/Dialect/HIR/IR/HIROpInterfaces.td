@@ -1,7 +1,7 @@
 #ifndef HIR_OPINTERFACES
 #define HIR_OPINTERFACES
 
-include "HIRDialect.td"
+include "circt/Dialect/HIR/IR/HIRDialect.td"
 
 def RegionOp : OpInterface<"RegionOp"> {
 let cppNamespace = "circt::hir"; 

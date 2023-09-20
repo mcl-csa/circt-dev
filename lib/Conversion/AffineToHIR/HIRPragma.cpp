@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "circt/Conversion/HIRPragma.h"
 #include "../PassDetail.h"
+#include "circt/Conversion/HIRPragma.h"
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"

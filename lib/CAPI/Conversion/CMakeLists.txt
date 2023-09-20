@@ -19,6 +19,7 @@ add_mlir_public_c_api_library(CIRCTCAPIConversion
   CIRCTFSMToSV
   CIRCTHandshakeToDC
   CIRCTHandshakeToHW
+  CIRCTHIRCosim
   CIRCTHWArithToHW
   CIRCTHWToLLHD
   CIRCTHWToLLVM

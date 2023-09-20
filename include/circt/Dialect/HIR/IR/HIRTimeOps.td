@@ -1,7 +1,4 @@
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "HIRDialect.td"
-include "HIRTypes.td"
-include "HIROpInterfaces.td"
 
 def DelayOp: HIR_Op<"delay",[Pure,DeclareOpInterfaceMethods<ScheduledOp>]>{
   let summary = "Delay operation";

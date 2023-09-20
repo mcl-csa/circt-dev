@@ -1,7 +1,4 @@
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "HIRDialect.td"
-include "HIRTypes.td"
-include "HIROpInterfaces.td"
 
 def BusOp :HIR_Op<"bus",[]> {
    let summary = "Instantiate new bus.";

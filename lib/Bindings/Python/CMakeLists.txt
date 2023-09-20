@@ -23,6 +23,7 @@ declare_mlir_python_extension(CIRCTBindingsPythonExtension
   EMBED_CAPI_LINK_LIBS
     CIRCTCAPIComb
     CIRCTCAPIESI
+    CIRCTCAPIHIR
     CIRCTCAPIMSFT
     CIRCTCAPIHW
     CIRCTCAPIHWArith
@@ -77,6 +78,14 @@ declare_mlir_dialect_python_bindings(
     dialects/esi.py
     dialects/_esi_ops_ext.py
   DIALECT_NAME esi)
+
+declare_mlir_dialect_python_bindings(
+  ADD_TO_PARENT CIRCTBindingsPythonSources.Dialects
+  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+  TD_FILE dialects/HIROps.td
+  SOURCES dialects/hir.py
+  DIALECT_NAME hir)
+
 
 declare_mlir_dialect_python_bindings(
   ADD_TO_PARENT CIRCTBindingsPythonSources.Dialects

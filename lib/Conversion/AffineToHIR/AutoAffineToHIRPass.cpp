@@ -10,7 +10,6 @@
 #include "../PassDetail.h"
 #include "circt/Conversion/AffineToHIR.h"
 #include "circt/Dialect/Comb/CombOps.h"
-// #include "circt/Dialect/HIR/Analysis/OpFusionAnalysis.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "circt/Dialect/HIR/IR/helper.h"

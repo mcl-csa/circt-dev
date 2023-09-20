@@ -1,6 +1,7 @@
 # TODO: Make the check source feature optional as an argument on *_add_library.
 set(LLVM_OPTIONAL_SOURCES
   Comb.cpp
+  HIR.cpp
   ESI.cpp
   FIRRTL.cpp
   CHIRRTL.cpp
@@ -59,6 +60,14 @@ add_mlir_public_c_api_library(CIRCTCAPIMSFT
   MLIRTransforms
   CIRCTMSFT
   CIRCTMSFTTransforms
+)
+
+add_mlir_public_c_api_library(CIRCTCAPIHIR
+  HIR.cpp
+
+  LINK_LIBS PUBLIC
+  MLIRCAPIIR
+  CIRCTHIR
 )
 
 add_mlir_public_c_api_library(CIRCTCAPIHW

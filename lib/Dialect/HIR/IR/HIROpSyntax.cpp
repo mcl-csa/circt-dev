@@ -849,7 +849,7 @@ ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &state) {
 
   if (failed(parser.parseOptionalAttrDict(state.attributes)))
     return failure();
-  ;
+  
   FuncOp::ensureTerminator(*body, builder, state.location);
 
   return success();

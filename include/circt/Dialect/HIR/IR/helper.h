@@ -5,9 +5,9 @@
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/PatternMatch.h"
-#include <mlir/Dialect/Arith/IR/Arith.h>
 
 namespace helper {
 // Templates.

@@ -1,8 +1,4 @@
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "HIRDialect.td"
-include "HIRTypes.td"
-include "HIRAttrs.td"
-include "HIROpInterfaces.td"
 
 def AllocaOp :HIR_Op<"alloca",[]> {
    let summary = "Instantiate new memory.";

@@ -16,6 +16,25 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
+// InstrumentCosim
+//===----------------------------------------------------------------------===//
+
+def InstrumentCosim : Pass<"instrument-cosim","mlir::ModuleOp"> {
+  let summary = "Generate mlir files for cosimulation.";
+  let constructor = "circt::createInstrumentCosimPass()";
+  let dependentDialects = [
+    "circt::hir::HIRDialect",
+  ];
+  let options = [
+    Option<"dir", "dir", "std::string",
+            "", "Output directory.">,
+    Option<"entry", "entry", "std::string",
+            "", "Entry function.">
+   ];
+
+}
+
+//===----------------------------------------------------------------------===//
 // HIRPragma
 //===----------------------------------------------------------------------===//
 

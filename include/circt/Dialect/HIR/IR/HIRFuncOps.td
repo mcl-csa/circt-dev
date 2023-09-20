@@ -2,10 +2,6 @@ include "mlir/IR/SymbolInterfaces.td"
 include "mlir/IR/FunctionInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 
-include "HIRDialect.td"
-include "HIROpInterfaces.td"
-include "HIRTypes.td"
-
 def FuncOp : HIR_Op<"func", 
   [Symbol, SingleBlockImplicitTerminator<"ReturnOp">,  FuncLike,
   IsolatedFromAbove,  HasParent<"mlir::ModuleOp">,DeclareOpInterfaceMethods<RegionOp>]> {
@@ -39,7 +35,6 @@ def FuncOp : HIR_Op<"func",
   let hasCustomAssemblyFormat = 1;
   let extraClassDeclaration = [{
     private:
-      // FunctionOpInterface interface.
       public:
       hir::FuncType getFuncType();
       ArrayRef<Type> getArgumentTypes(); 
