@@ -124,6 +124,7 @@ LogicalResult CPUModuleBuilder::visitOp(hir::FuncExternOp op) {
 }
 
 LogicalResult CPUModuleBuilder::visitOp(func::FuncOp op) {
+  op->setAttr("llvm.emit_c_interface", UnitAttr::get(op->getContext()));
   if (op.getArgAttrs()) {
     // Remove hir arg attributes.
     for (size_t i = 0; i < op.getNumArguments(); i++)
