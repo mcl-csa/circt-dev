@@ -37,6 +37,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <iostream>
 #include <mlir/IR/Attributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 
 using namespace mlir;
 using namespace circt;
@@ -50,9 +51,7 @@ struct InstrumentCosim : public InstrumentCosimBase<InstrumentCosim> {
 
 class CPUModuleBuilder {
 public:
-  CPUModuleBuilder(mlir::ModuleOp mod) : mod(mod) {
-    cosimInfo["Description"] = "Cosimulation information.";
-  }
+  CPUModuleBuilder(mlir::ModuleOp mod) : mod(mod) {}
   LogicalResult walk();
   void print(llvm::raw_ostream &os);
   void printJSON(llvm::raw_ostream &os);
@@ -122,13 +121,48 @@ LogicalResult CPUModuleBuilder::visitOp(hir::FuncExternOp op) {
   op.erase();
   return success();
 }
+LogicalResult writeInfoToJson(func::FuncOp op, llvm::json::Object &cosimInfo) {
+  auto funcInfo = llvm::json::Object();
+  funcInfo["type"] = "function";
+  auto types = op.getArgumentTypes();
+  auto names = op->getAttrOfType<ArrayAttr>("argNames");
+  if (!names) {
+    return op.emitError("Could not find argNames.");
+  }
+  assert(names.size() != op.getNumArguments());
+
+  llvm::json::Array argInfo;
+  for (size_t i = 0; i < op.getNumArguments(); i++) {
+    llvm::json::Object info;
+    info["name"] = names[i].dyn_cast<StringAttr>().str();
+    if (isa<IntegerType>(types[i])) {
+      info["type"] = "integer";
+      info["width"] = types[i].getIntOrFloatBitWidth();
+    } else if (isa<FloatType>(types[i])) {
+      info["type"] = "float";
+      info["width"] = types[i].getIntOrFloatBitWidth();
+    } else if (auto memrefTy = dyn_cast<mlir::MemRefType>(types[i])) {
+      info["type"] = "memref";
+      info["shape"] = std::vector<int64_t>(memrefTy.getShape());
+    } else {
+      info["type"] = "UNKNOWN";
+    }
+    argInfo.push_back(std::move(info));
+  }
+  funcInfo["Args"] = std::move(argInfo);
+  cosimInfo[op.getSymName()] = std::move(funcInfo);
+  return success();
+}
 
 LogicalResult CPUModuleBuilder::visitOp(func::FuncOp op) {
+  if (!op->hasAttrOfType<UnitAttr>("hwAccel"))
+    return success();
+
+  if (failed(writeInfoToJson(op, this->cosimInfo)))
+    return failure();
   op->setAttr("llvm.emit_c_interface", UnitAttr::get(op->getContext()));
   if (op.getArgAttrs()) {
-    // Remove hir arg attributes.
     for (size_t i = 0; i < op.getNumArguments(); i++)
-
       removeHIRAttrs(
           [&op, i](StringAttr attrName) { op.removeArgAttr(i, attrName); },
           op.getArgAttrDict(i));
