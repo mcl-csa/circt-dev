@@ -121,15 +121,32 @@ LogicalResult CPUModuleBuilder::visitOp(hir::FuncExternOp op) {
   op.erase();
   return success();
 }
+
+llvm::json::Array getMemPortInfo(Attribute argAttr) {
+  auto portsAttr =
+      argAttr.dyn_cast<DictionaryAttr>().getAs<ArrayAttr>("hir.memref.ports");
+  llvm::json::Array portInfoArray;
+  for (auto port : portsAttr) {
+    auto portInfo = llvm::json::Object();
+    if (helper::isMemrefRdPort(port))
+      portInfo["rd_latency"] = helper::getMemrefPortRdLatency(port).value();
+    if (helper::isMemrefWrPort(port))
+      portInfo["wr_latency"] = helper::getMemrefPortWrLatency(port).value();
+    portInfoArray.push_back(std::move(portInfo));
+  }
+  return portInfoArray;
+}
+
 LogicalResult writeInfoToJson(func::FuncOp op, llvm::json::Object &cosimInfo) {
   auto funcInfo = llvm::json::Object();
   funcInfo["type"] = "function";
   auto types = op.getArgumentTypes();
+  auto argAttrs = op.getArgAttrs().value();
   auto names = op->getAttrOfType<ArrayAttr>("argNames");
   if (!names) {
     return op.emitError("Could not find argNames.");
   }
-  assert(names.size() != op.getNumArguments());
+  assert(names.size() == op.getNumArguments());
 
   llvm::json::Array argInfo;
   for (size_t i = 0; i < op.getNumArguments(); i++) {
@@ -144,12 +161,20 @@ LogicalResult writeInfoToJson(func::FuncOp op, llvm::json::Object &cosimInfo) {
     } else if (auto memrefTy = dyn_cast<mlir::MemRefType>(types[i])) {
       info["type"] = "memref";
       info["shape"] = std::vector<int64_t>(memrefTy.getShape());
+      info["ports"] = getMemPortInfo(argAttrs[i]);
+      llvm::json::Object elementInfo;
+      if (isa<IntegerType>(memrefTy.getElementType()))
+        elementInfo["type"] = "integer";
+      else if (isa<FloatType>(memrefTy.getElementType()))
+        elementInfo["type"] = "float";
+      elementInfo["width"] = memrefTy.getElementType().getIntOrFloatBitWidth();
+      info["element"] = std::move(elementInfo);
     } else {
-      info["type"] = "UNKNOWN";
+      assert(false && "Unsupported type for serialization.");
     }
     argInfo.push_back(std::move(info));
   }
-  funcInfo["Args"] = std::move(argInfo);
+  funcInfo["args"] = std::move(argInfo);
   cosimInfo[op.getSymName()] = std::move(funcInfo);
   return success();
 }
