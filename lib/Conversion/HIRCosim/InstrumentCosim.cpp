@@ -122,12 +122,14 @@ LogicalResult CPUModuleBuilder::visitOp(hir::FuncExternOp op) {
   return success();
 }
 
-llvm::json::Array getMemPortInfo(Attribute argAttr) {
+llvm::json::Array getMemPortInfo(std::string &memName, Attribute argAttr) {
   auto portsAttr =
       argAttr.dyn_cast<DictionaryAttr>().getAs<ArrayAttr>("hir.memref.ports");
   llvm::json::Array portInfoArray;
+  int portNum = 0;
   for (auto port : portsAttr) {
     auto portInfo = llvm::json::Object();
+    portInfo["name"] = memName + "_p" + std::to_string(portNum++);
     if (helper::isMemrefRdPort(port))
       portInfo["rd_latency"] = helper::getMemrefPortRdLatency(port).value();
     if (helper::isMemrefWrPort(port))
@@ -151,7 +153,8 @@ LogicalResult writeInfoToJson(func::FuncOp op, llvm::json::Object &cosimInfo) {
   llvm::json::Array argInfo;
   for (size_t i = 0; i < op.getNumArguments(); i++) {
     llvm::json::Object info;
-    info["name"] = names[i].dyn_cast<StringAttr>().str();
+    auto name = names[i].dyn_cast<StringAttr>().str();
+    info["name"] = name;
     if (isa<IntegerType>(types[i])) {
       info["type"] = "integer";
       info["width"] = types[i].getIntOrFloatBitWidth();
@@ -161,7 +164,7 @@ LogicalResult writeInfoToJson(func::FuncOp op, llvm::json::Object &cosimInfo) {
     } else if (auto memrefTy = dyn_cast<mlir::MemRefType>(types[i])) {
       info["type"] = "memref";
       info["shape"] = std::vector<int64_t>(memrefTy.getShape());
-      info["ports"] = getMemPortInfo(argAttrs[i]);
+      info["ports"] = getMemPortInfo(name, argAttrs[i]);
       llvm::json::Object elementInfo;
       if (isa<IntegerType>(memrefTy.getElementType()))
         elementInfo["type"] = "integer";
