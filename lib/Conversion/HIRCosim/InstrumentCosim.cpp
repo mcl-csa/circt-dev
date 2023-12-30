@@ -84,9 +84,11 @@ LogicalResult CPUModuleBuilder::walk() {
   builder.setInsertionPointToStart(mod.getBody());
   auto funcTy = builder.getFunctionType(builder.getI32Type(),
                                         llvm::SmallVector<Type>({}));
-  builder.create<func::FuncOp>(builder.getUnknownLoc(), "record", funcTy,
-                               builder.getStringAttr("private"), ArrayAttr(),
-                               ArrayAttr());
+  auto op = builder.create<func::FuncOp>(
+      builder.getUnknownLoc(), "record", funcTy,
+      builder.getStringAttr("private"), ArrayAttr(), ArrayAttr());
+
+  op->setAttr("llvm.emit_c_interface", builder.getUnitAttr());
 
   this->mod.walk([this](Operation *operation) {
     if (isa<hir::ReturnOp>(operation)) {
@@ -247,7 +249,7 @@ void InstrumentCosim::runOnOperation() {
   } else
     outputDir = ".";
 
-  auto cpuFile = llvm::raw_fd_ostream(outputDir + "/cpu-module.mlir", er,
+  auto cpuFile = llvm::raw_fd_ostream(outputDir + "/cpu-sim.mlir", er,
                                       llvm::sys::fs::CD_CreateAlways);
   auto jsonFile = llvm::raw_fd_ostream(outputDir + "/cosim.json", er,
                                        llvm::sys::fs::CD_CreateAlways);
@@ -257,8 +259,8 @@ void InstrumentCosim::runOnOperation() {
   cpuModule.print(cpuFile);
   cpuModule.printJSON(jsonFile);
 
-  auto verilogFile = llvm::raw_fd_ostream(outputDir + "/verilog-module.mlir",
-                                          er, llvm::sys::fs::CD_CreateAlways);
+  auto verilogFile = llvm::raw_fd_ostream(outputDir + "/verilog-sim.mlir", er,
+                                          llvm::sys::fs::CD_CreateAlways);
   verilogModule.print(verilogFile);
 }
 
