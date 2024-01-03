@@ -17,6 +17,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include <memory>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <stack>
 
 class HIRScheduler;
@@ -45,6 +46,7 @@ private:
 private:
   mlir::LogicalResult visitOperation(mlir::Operation *);
   mlir::LogicalResult visitOp(mlir::func::FuncOp);
+  mlir::LogicalResult visitOp(mlir::arith::IndexCastOp);
   mlir::LogicalResult visitOp(circt::hir::ProbeOp);
   mlir::LogicalResult visitOp(mlir::func::ReturnOp);
   mlir::LogicalResult visitOp(mlir::affine::AffineForOp);

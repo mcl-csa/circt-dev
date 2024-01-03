@@ -294,12 +294,42 @@ LogicalResult AffineToHIRImpl::visitOp(mlir::func::FuncOp op) {
   return success();
 }
 
+LogicalResult AffineToHIRImpl::visitOp(arith::IndexCastOp op) {
+  auto outTy = op.getResult().getType();
+  if (outTy.isa<IndexType>()) {
+    return op->emitError("affine-to-hir only supports index to integer casts.");
+  }
+  auto hirInputValue = valueConverter.getBlockLocalValue(
+      builder, op.getIn(), builder.getInsertionBlock());
+  auto inTy = hirInputValue.getValue().getType();
+
+  HIRValue outputHIRValue;
+  if (inTy.getIntOrFloatBitWidth() > outTy.getIntOrFloatBitWidth()) {
+    outputHIRValue =
+        HIRValue(builder.create<arith::TruncIOp>(
+                     builder.getUnknownLoc(),
+                     builder.getIntegerType(outTy.getIntOrFloatBitWidth()),
+                     hirInputValue.getValue()),
+                 hirInputValue.getTimeVar(), hirInputValue.getOffset());
+  } else {
+    assert("unimplemented" && false);
+  }
+
+  valueConverter.mapValueToHIRValue(op.getResult(), outputHIRValue,
+                                    builder.getInsertionBlock());
+
+  return success();
+}
+
 LogicalResult AffineToHIRImpl::visitOp(hir::ProbeOp op) {
   auto hirInputValue = valueConverter.getBlockLocalValue(
       builder, op.getInput(), builder.getInsertionBlock());
 
   builder.create<hir::ProbeOp>(op->getLoc(), hirInputValue.getValue(),
                                op.getVerilogName());
+  // If a time var is associated with this value then get the valid signal.
+  // Constant values do not have an associated time var, so then do not generate
+  // a valid signal.
   if (hirInputValue.getTimeVar())
     builder.create<hir::ProbeOp>(op->getLoc(), hirInputValue.getTimeVar(),
                                  op.getVerilogName().str() + "_valid");
@@ -628,6 +658,8 @@ LogicalResult AffineToHIRImpl::visitOperation(Operation *operation) {
   if (auto op = dyn_cast<mlir::memref::AllocaOp>(operation))
     return visitOp(op);
   if (auto op = dyn_cast<mlir::func::CallOp>(operation))
+    return visitOp(op);
+  if (auto op = dyn_cast<arith::IndexCastOp>(operation))
     return visitOp(op);
   if (auto op = dyn_cast<hir::ProbeOp>(operation))
     return visitOp(op);
