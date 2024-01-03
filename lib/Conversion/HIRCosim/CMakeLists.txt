@@ -1,6 +1,7 @@
 add_circt_library(CIRCTHIRCosim
-  InstrumentCosim.cpp
+  GenCosimFiles.cpp
   CPUModuleBuilder.cpp
+  CosimInfo.cpp 
 
   DEPENDS
   CIRCTConversionPassIncGen

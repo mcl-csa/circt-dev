@@ -13,7 +13,7 @@
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 
 namespace circt {
-std::unique_ptr<mlir::Pass> createInstrumentCosimPass();
+std::unique_ptr<mlir::Pass> createGenCosimFilesPass();
 } // namespace circt
 
 #endif // CIRCT_CONVERSION_INSTRUMENTCOSIM_H_
