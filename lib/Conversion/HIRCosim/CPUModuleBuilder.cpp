@@ -20,8 +20,8 @@ removeHIRAttrs(std::function<void(StringAttr attrName)> const &removeAttr,
 LogicalResult CPUModuleBuilder::walk() {
   OpBuilder builder(this->mod);
   builder.setInsertionPointToStart(mod.getBody());
-  auto funcTy = builder.getFunctionType(builder.getI32Type(),
-                                        llvm::SmallVector<Type>({}));
+  auto funcTy =
+      builder.getFunctionType({builder.getI32Type(), builder.getI32Type()}, {});
   auto op = builder.create<func::FuncOp>(
       builder.getUnknownLoc(), "record", funcTy,
       builder.getStringAttr("private"), ArrayAttr(), ArrayAttr());
@@ -84,11 +84,18 @@ LogicalResult CPUModuleBuilder::visitOp(func::FuncOp op) {
   return success();
 }
 
+func::CallOp emitRecordCall(OpBuilder &builder, Location loc, Value input,
+                            IntegerAttr id) {
+  auto idVar = builder.create<arith::ConstantOp>(builder.getUnknownLoc(), id);
+  return builder.create<func::CallOp>(
+      loc, TypeRange(), SymbolRefAttr::get(builder.getStringAttr("record")),
+      SmallVector<Value>({input, idVar}));
+}
+
 LogicalResult CPUModuleBuilder::visitOp(hir::ProbeOp op) {
   OpBuilder builder(op);
-  builder.create<mlir::func::CallOp>(
-      op.getLoc(), TypeRange(),
-      SymbolRefAttr::get(builder.getStringAttr("record")), op.getInput());
+  emitRecordCall(builder, op.getLoc(), op.getInput(),
+                 op->getAttrOfType<IntegerAttr>("id"));
   op.erase();
   return success();
 }

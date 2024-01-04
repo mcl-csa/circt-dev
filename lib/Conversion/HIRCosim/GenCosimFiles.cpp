@@ -56,7 +56,7 @@ LogicalResult insertProbe(OpBuilder &builder, Value value, int64_t probeID) {
   auto name = "probe_" + std::to_string(probeID);
 
   builder.create<hir::ProbeOp>(builder.getUnknownLoc(), value, name)
-      ->setAttr("id", builder.getI64IntegerAttr(probeID));
+      ->setAttr("id", builder.getI32IntegerAttr(probeID));
 
   return success();
 }
@@ -73,7 +73,7 @@ void GenCosimFilesPass::runOnOperation() {
     OpBuilder builder(operation);
     if (auto op = dyn_cast<affine::AffineLoadOp>(operation)) {
       builder.setInsertionPointAfter(op);
-      if (failed(insertProbe(builder, op.getResult(), probeID)))
+      if (failed(insertProbe(builder, op.getResult(), probeID++)))
         return WalkResult::interrupt();
       probedValues.insert(op.getResult());
     } else if (auto op = dyn_cast<affine::AffineStoreOp>(operation)) {
@@ -81,7 +81,7 @@ void GenCosimFilesPass::runOnOperation() {
         return WalkResult::advance();
       }
       builder.setInsertionPoint(op);
-      if (failed(insertProbe(builder, op.getValue(), probeID)))
+      if (failed(insertProbe(builder, op.getValue(), probeID++)))
         return WalkResult::interrupt();
       probedValues.insert(op.getValue());
     }
