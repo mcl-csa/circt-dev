@@ -330,9 +330,17 @@ LogicalResult AffineToHIRImpl::visitOp(hir::ProbeOp op) {
   // If a time var is associated with this value then get the valid signal.
   // Constant values do not have an associated time var, so then do not generate
   // a valid signal.
-  if (hirInputValue.getTimeVar())
-    builder.create<hir::ProbeOp>(op->getLoc(), hirInputValue.getTimeVar(),
-                                 op.getVerilogName().str() + "_valid");
+  if (hirInputValue.isConstant())
+    return success();
+  auto offset = hirInputValue.getOffset();
+  Value validSignal = hirInputValue.getTimeVar();
+  if (offset > 0) {
+    validSignal = builder.create<hir::TimeOp>(
+        builder.getUnknownLoc(), hir::TimeType::get(builder.getContext()),
+        validSignal, builder.getI64IntegerAttr(offset));
+  }
+  builder.create<hir::ProbeOp>(op->getLoc(), validSignal,
+                               op.getVerilogName().str() + "_valid");
   return success();
 }
 

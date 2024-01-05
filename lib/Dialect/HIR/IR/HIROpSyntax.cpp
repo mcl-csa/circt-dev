@@ -849,7 +849,7 @@ ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &state) {
 
   if (failed(parser.parseOptionalAttrDict(state.attributes)))
     return failure();
-  
+
   FuncOp::ensureTerminator(*body, builder, state.location);
 
   return success();
@@ -954,7 +954,7 @@ void FuncExternOp::print(OpAsmPrinter &printer) {
                      this->getResultNames().value_or(ArrayAttr()));
   printer.printOptionalAttrDict(
       this->getOperation()->getAttrs(),
-      {"funcTy", "function_type", "arg_attrs", "res_attrs", "sym_name"});
+      {"funcTy", "function_type", "arg_attrs", "result_attrs", "sym_name"});
 }
 
 void FuncOp::print(OpAsmPrinter &printer) {
@@ -974,7 +974,7 @@ void FuncOp::print(OpAsmPrinter &printer) {
                       /*printBlockTerminators=*/true);
   printer.printOptionalAttrDict(
       this->getOperation()->getAttrs(),
-      {"funcTy", "function_type", "arg_attrs", "res_attrs", "sym_name"});
+      {"funcTy", "function_type", "arg_attrs", "result_attrs", "sym_name"});
 }
 
 /// TensorInsertOp parser and printer.
