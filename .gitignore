@@ -1,4 +1,5 @@
 /build*
+*.code-workspace
 /install*
 /docker_build
 tags
