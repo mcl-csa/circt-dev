@@ -4,7 +4,8 @@
 #include <verilated_vcd_c.h>
 
 using namespace std;
-template <typename T> class Testbench {
+template <typename T>
+class Testbench {
 private:
   VerilatedVcdC m_trace;
   vector<Module *> modules;
@@ -18,19 +19,25 @@ public:
   ~Testbench();
   bool traceOn;
 };
-template <typename T> Testbench<T>::Testbench():traceOn(false) {
-}
+template <typename T>
+Testbench<T>::Testbench() : traceOn(false) {}
 
-template <typename T> Testbench<T>::Testbench(const char *waveformFile):traceOn(true) {
+template <typename T>
+Testbench<T>::Testbench(const char *waveformFile) : traceOn(true) {
   Verilated::traceEverOn(true);
   // Trace 5 levels of hierarchy.
   dut.trace(&m_trace, 5);
   m_trace.open(waveformFile);
 }
 
-template <typename T> Testbench<T>::~Testbench() { if(traceOn)m_trace.close(); }
+template <typename T>
+Testbench<T>::~Testbench() {
+  if (traceOn)
+    m_trace.close();
+}
 
-template <typename T> void Testbench<T>::registerModule(Module *mod) {
+template <typename T>
+void Testbench<T>::registerModule(Module *mod) {
   modules.push_back(mod);
 }
 
@@ -40,7 +47,8 @@ static bool isPosOrNegEdge(int t) {
   return false;
 }
 
-template <typename T> void Testbench<T>::run(vluint64_t numCycles) {
+template <typename T>
+void Testbench<T>::run(vluint64_t numCycles) {
   dut.rst = 0;
   dut.clk = 0;
   for (int t = 0; t < 10 * numCycles; t++) {
@@ -56,7 +64,8 @@ template <typename T> void Testbench<T>::run(vluint64_t numCycles) {
 
     // Evaluate the dut with old inputs.
     dut.eval();
-    if(traceOn);
+    if (traceOn)
+      ;
     m_trace.dump(t);
 
     // If current clk value is 1 then this is posedge.

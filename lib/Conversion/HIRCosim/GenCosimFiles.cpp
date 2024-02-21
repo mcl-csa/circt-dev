@@ -77,13 +77,17 @@ void GenCosimFilesPass::runOnOperation() {
         return WalkResult::interrupt();
       probedValues.insert(op.getResult());
     } else if (auto op = dyn_cast<affine::AffineStoreOp>(operation)) {
-      if (probedValues.contains(op.getValue())) {
-        return WalkResult::advance();
-      }
-      builder.setInsertionPoint(op);
-      if (failed(insertProbe(builder, op.getValue(), probeID++)))
-        return WalkResult::interrupt();
-      probedValues.insert(op.getValue());
+      // All probes should have a valid. The value of store may not have a valid
+      // signal associated so we don't probe it.
+
+      // if (probedValues.contains(op.getValue())) {
+      //   return WalkResult::advance();
+      // }
+
+      // builder.setInsertionPoint(op);
+      // if (failed(insertProbe(builder, op.getValue(), probeID++)))
+      //   return WalkResult::interrupt();
+      // probedValues.insert(op.getValue());
     }
     return WalkResult::advance();
   });

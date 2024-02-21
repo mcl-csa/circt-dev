@@ -1,12 +1,12 @@
-#include <iostream>
-#include <stdlib.h>
 #include "../common/MemRef.h"
 #include "../common/Testbench.h"
 #include "Vgesummv_hir.h"
+#include <iostream>
+#include <stdlib.h>
 
 #define ALPHA 1
 #define BETA 2
-typedef  unsigned int verilator_i32;
+typedef unsigned int verilator_i32;
 
 void gesummv_hir(int alpha, int beta, int tmp[8], int A[8][8], int B[8][8],
                  int X[8], int Y[8]);
@@ -20,7 +20,7 @@ public:
   MemRef<unsigned char, verilator_i32> TMP;
 
   gesummv_tb(std::string &&Adata, std::string &&Bdata, std::string &&Xdata)
-      : Testbench(), A(Adata.c_str()), B(Bdata.c_str()),
+      : Testbench("simulation.vcd"), A(Adata.c_str()), B(Bdata.c_str()),
         X(Xdata.c_str()), Y(8), TMP(8) {
     A.registerRdPort(&dut.A_p0_addr_en, &dut.A_p0_addr_data, &dut.A_p0_rd_en,
                      &dut.A_p0_rd_data);
@@ -52,7 +52,7 @@ int main(int argc, char **argv, char **env) {
   gesummv_hir(1, 2, tmp, tb.A.getDataPtr<int(*)[8]>(),
               tb.B.getDataPtr<int(*)[8]>(), tb.X.getDataPtr<int *>(), Y);
 
-  tb.TMP.assertEq("tmp",tmp);
-  tb.Y.assertEq("Y",Y);
+  tb.TMP.assertEq("tmp", tmp);
+  tb.Y.assertEq("Y", Y);
   printf("TEST PASS\n");
 }

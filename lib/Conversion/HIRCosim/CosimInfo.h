@@ -10,7 +10,7 @@ public:
   void print(llvm::raw_ostream &os);
 
 private:
-  llvm::json::Object cosimInfo;
+  llvm::json::Array cosimInfo;
   llvm::json::Array probes;
   mlir::ModuleOp mod;
   mlir::LogicalResult visitOp(mlir::func::FuncOp);
