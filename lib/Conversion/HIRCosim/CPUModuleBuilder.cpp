@@ -86,6 +86,17 @@ LogicalResult CPUModuleBuilder::visitOp(func::FuncOp op) {
 
 func::CallOp emitRecordCall(OpBuilder &builder, Location loc, Value input,
                             IntegerAttr id) {
+  if (auto intTy = input.getType().dyn_cast<IntegerType>()) {
+    if (intTy.getWidth() < 32) {
+      input = builder.create<arith::ExtUIOp>(loc, builder.getIntegerType(32),
+                                             input);
+    }
+    assert(input.getType().getIntOrFloatBitWidth() == 32);
+  } else if (auto floatTy = input.getType().dyn_cast<FloatType>()) {
+    assert(floatTy.getWidth() == 32);
+    input = builder.create<arith::BitcastOp>(builder.getUnknownLoc(),
+                                             builder.getIntegerType(32), input);
+  }
   auto idVar = builder.create<arith::ConstantOp>(builder.getUnknownLoc(), id);
   return builder.create<func::CallOp>(
       loc, TypeRange(), SymbolRefAttr::get(builder.getStringAttr("record")),

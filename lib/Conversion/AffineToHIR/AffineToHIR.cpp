@@ -15,11 +15,8 @@
 #include "circt/Dialect/HIR/IR/HIRDialect.h"
 #include "circt/Dialect/HIR/IR/helper.h"
 #include "circt/Dialect/HW/HWOps.h"
-#include "circt/Scheduling/Algorithms.h"
-#include "circt/Scheduling/Problems.h"
 #include "mlir/Dialect/Affine/Analysis/AffineAnalysis.h"
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
-#include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -27,14 +24,9 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Support/LLVM.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/TypeSwitch.h"
-#include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include <iostream>
 
 using namespace mlir;
 using namespace circt;
@@ -55,7 +47,7 @@ static SmallVector<DimKind> getDimKinds(int numDims, DictionaryAttr attr) {
   if (auto dimKinds = attr.getNamed("hir.bank_dims")) {
     auto bankDims = dimKinds.value().getValue().dyn_cast<ArrayAttr>();
     for (auto isBanked : bankDims) {
-      if (isBanked.dyn_cast<mlir::BoolAttr>().getValue() == true) {
+      if (isBanked.dyn_cast<mlir::BoolAttr>().getValue()) {
         out.push_back(DimKind::BANK);
       } else {
         out.push_back(DimKind::ADDR);
@@ -177,7 +169,7 @@ Type getHIRType(Type ty, DictionaryAttr attr) {
       // assert(memrefTy.getShape().size() == 1);
       // If the memref is of size one then it must be a banked dimension so that
       // we can index it.
-      if (memrefTy.getShape().size() == 0)
+      if (memrefTy.getShape().empty())
         return hir::MemrefType::get(ty.getContext(), {1},
                                     getHIRValueType(memrefTy.getElementType()),
                                     SmallVector<DimKind>({DimKind::BANK}));

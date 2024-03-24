@@ -1,6 +1,5 @@
 #include "CosimInfo.h"
 #include "circt/Dialect/HIR/IR/helper.h"
-#include "llvm/Support/FormatVariadicDetails.h"
 #include <mlir/IR/Visitors.h>
 
 using namespace mlir;
@@ -80,6 +79,13 @@ LogicalResult CosimInfo::visitOp(func::FuncOp op) {
 LogicalResult CosimInfo::visitOp(hir::ProbeOp op) {
   llvm::json::Object probe;
   probe["name"] = op.getVerilogName();
+  if (isa<IntegerType>(op.getInput().getType()))
+    probe["typ"] = "integer";
+  else if (isa<FloatType>(op.getInput().getType()))
+    probe["typ"] = "float";
+  else
+    return op.emitError("Unknown input type to probe op. Type = ")
+           << op.getInput().getType();
   probe["id"] = op->getAttrOfType<IntegerAttr>("id").getInt();
   this->probes.push_back(std::move(probe));
   return success();

@@ -10,36 +10,22 @@
 #include "../PassDetail.h"
 #include "CPUModuleBuilder.h"
 #include "CosimInfo.h"
-#include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HIR/IR/HIR.h"
-#include "circt/Dialect/HIR/IR/HIRDialect.h"
-#include "circt/Dialect/HW/HWOps.h"
-#include "circt/Scheduling/Algorithms.h"
-#include "circt/Scheduling/Problems.h"
 #include "mlir/Dialect/Affine/Analysis/AffineAnalysis.h"
 #include "mlir/Dialect/Affine/Analysis/AffineStructures.h"
-#include "mlir/Dialect/Affine/IR/AffineMemoryOpInterfaces.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Support/LLVM.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/TypeSwitch.h"
-#include "llvm/Support/Casting.h"
-#include "llvm/Support/Debug.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
-#include <iostream>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <string>
+#include <system_error>
 
 using namespace mlir;
 using namespace circt;
@@ -76,9 +62,14 @@ void GenCosimFilesPass::runOnOperation() {
       if (failed(insertProbe(builder, op.getResult(), probeID++)))
         return WalkResult::interrupt();
       probedValues.insert(op.getResult());
+    } else if (auto op = dyn_cast<func::CallOp>(operation)) {
+      builder.setInsertionPointAfter(op);
+      for (auto result : op.getResults())
+        if (failed(insertProbe(builder, result, probeID++)))
+          return WalkResult::interrupt();
     } else if (auto op = dyn_cast<affine::AffineStoreOp>(operation)) {
-      // All probes should have a valid. The value of store may not have a valid
-      // signal associated so we don't probe it.
+      // All probes should have a valid signal. The value of store may not have
+      // a valid signal associated so we don't probe it.
 
       // if (probedValues.contains(op.getValue())) {
       //   return WalkResult::advance();
@@ -100,7 +91,7 @@ void GenCosimFilesPass::runOnOperation() {
     return;
   if (this->dir.hasValue()) {
     outputDir = this->dir.getValue();
-    llvm::sys::fs::create_directories(outputDir);
+    std::error_code status = llvm::sys::fs::create_directories(outputDir);
   } else
     outputDir = ".";
 
