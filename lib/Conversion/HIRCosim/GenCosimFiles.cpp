@@ -57,6 +57,9 @@ void GenCosimFilesPass::runOnOperation() {
   llvm::DenseSet<Value> probedValues;
   module.walk([&probedValues, &probeID](Operation *operation) {
     OpBuilder builder(operation);
+
+    // All probes should have a valid signal. The value of store may not have
+    // a valid signal associated so we don't probe it.
     if (auto op = dyn_cast<affine::AffineLoadOp>(operation)) {
       builder.setInsertionPointAfter(op);
       if (failed(insertProbe(builder, op.getResult(), probeID++)))
@@ -67,18 +70,10 @@ void GenCosimFilesPass::runOnOperation() {
       for (auto result : op.getResults())
         if (failed(insertProbe(builder, result, probeID++)))
           return WalkResult::interrupt();
-    } else if (auto op = dyn_cast<affine::AffineStoreOp>(operation)) {
-      // All probes should have a valid signal. The value of store may not have
-      // a valid signal associated so we don't probe it.
-
-      // if (probedValues.contains(op.getValue())) {
-      //   return WalkResult::advance();
-      // }
-
-      // builder.setInsertionPoint(op);
-      // if (failed(insertProbe(builder, op.getValue(), probeID++)))
-      //   return WalkResult::interrupt();
-      // probedValues.insert(op.getValue());
+    } else if (auto op = dyn_cast<affine::AffineForOp>(operation)) {
+      builder.setInsertionPointToStart(op.getBody(0));
+      if (failed(insertProbe(builder, op.getInductionVar(), probeID++)))
+        return WalkResult::interrupt();
     }
     return WalkResult::advance();
   });

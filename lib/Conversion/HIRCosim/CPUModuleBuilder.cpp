@@ -2,6 +2,7 @@
 #include "circt/Dialect/HIR/IR/HIR.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/BuiltinTypes.h>
 
 using namespace mlir;
 using namespace circt;
@@ -86,7 +87,10 @@ LogicalResult CPUModuleBuilder::visitOp(func::FuncOp op) {
 
 func::CallOp emitRecordCall(OpBuilder &builder, Location loc, Value input,
                             IntegerAttr id) {
-  if (auto intTy = input.getType().dyn_cast<IntegerType>()) {
+  if (auto idxTy = input.getType().dyn_cast<IndexType>()) {
+    input = builder.create<arith::IndexCastOp>(loc, builder.getIntegerType(32),
+                                               input);
+  } else if (auto intTy = input.getType().dyn_cast<IntegerType>()) {
     if (intTy.getWidth() < 32) {
       input = builder.create<arith::ExtUIOp>(loc, builder.getIntegerType(32),
                                              input);

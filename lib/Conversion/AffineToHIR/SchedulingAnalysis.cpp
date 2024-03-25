@@ -341,6 +341,8 @@ LogicalResult HIRScheduler::insertSSADependencies() {
 
       auto result = operation->getResult(i);
       for (auto &use : result.getUses()) {
+        if (isa<circt::hir::ProbeOp>(use.getOwner()))
+          continue;
         auto dep = getDependence(operation, use, *resultDelay);
         if (!dep)
           return WalkResult::interrupt();
@@ -358,6 +360,8 @@ LogicalResult HIRScheduler::insertSSADependencies() {
     for (size_t i = 0; i < regions[0].getNumArguments(); i++) {
       auto regionArg = regions[0].getArgument(i);
       for (auto &use : regionArg.getUses()) {
+        if (isa<circt::hir::ProbeOp>(use.getOwner()))
+          continue;
         auto dep = getDependence(NULL, use, 0);
         if (!dep)
           return WalkResult::interrupt();

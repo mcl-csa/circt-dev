@@ -79,7 +79,7 @@ LogicalResult CosimInfo::visitOp(func::FuncOp op) {
 LogicalResult CosimInfo::visitOp(hir::ProbeOp op) {
   llvm::json::Object probe;
   probe["name"] = op.getVerilogName();
-  if (isa<IntegerType>(op.getInput().getType()))
+  if (isa<IndexType, IntegerType>(op.getInput().getType()))
     probe["typ"] = "integer";
   else if (isa<FloatType>(op.getInput().getType()))
     probe["typ"] = "float";

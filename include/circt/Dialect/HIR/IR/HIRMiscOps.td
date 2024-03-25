@@ -16,7 +16,7 @@ def CastOp: HIR_Op<"cast",[Pure]>{
    let summary = "Cast between compatible types.";
    let description = [{
 Examples:
-      ```mlir %t 
+      ```mlir %t
          = hir.cast %b : !hir.time -> !hir.bus<i1>```
    }];
 
@@ -58,8 +58,8 @@ def ProbeOp: HIR_Op<"probe",[]>{
    let description = [{
       This op preserves the name of an input SSA var in the generated Verilog.
          Examples:
-         ```mlir %t 
-         = hir.probe %x name "verilog_name": !tensor<4xi32>```
+         ```mlir %t
+         = hir.probe %x name "verilog_name": i32```
    }];
 
    let arguments = (ins AnyType: $input, StrAttr: $verilog_name);
@@ -68,5 +68,3 @@ def ProbeOp: HIR_Op<"probe",[]>{
    let assemblyFormat = [{ $input `name` $verilog_name attr-dict `:` type($input)}];
    let hasVerifier = 1;
 }
-
-

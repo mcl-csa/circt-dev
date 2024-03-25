@@ -3,6 +3,7 @@
 #include "circt/Support/LLVM.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/SetVector.h"
+#include <mlir/IR/BuiltinTypes.h>
 using namespace circt;
 using namespace hir;
 //-----------------------------------------------------------------------------
@@ -475,8 +476,8 @@ LogicalResult NextIterOp::verify() {
 
 LogicalResult ProbeOp::verify() {
   auto ty = this->getInput().getType();
-  if (!(helper::isBuiltinSizedType(ty) || ty.isa<hir::TimeType>() ||
-        helper::isBusLikeType(ty)))
+  if (!(helper::isBuiltinSizedType(ty) ||
+        ty.isa<mlir::IndexType, hir::TimeType>() || helper::isBusLikeType(ty)))
     return this->emitError() << "Unsupported type for hir.probe.";
   if (this->getVerilogName().empty() ||
       this->getVerilogName().startswith("%") ||
